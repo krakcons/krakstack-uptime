@@ -84,6 +84,27 @@ it("renders uptime totals independently for each time range", () => {
   expect(markup).toContain('class="uptime-bar bad"');
 });
 
+it("renders immediate custom uptime tooltips", () => {
+  const now = Date.UTC(2026, 7, 25, 20, 0);
+  const minute = Math.floor(now / 60_000);
+  const statusMarkup = renderStatus(
+    snapshot({
+      monitors: [monitor()],
+      minutes: [{ monitor_id: "api", bucket: minute, successful: 1, total: 1 }],
+    }),
+    now,
+    "America/Toronto",
+  );
+  const page = renderPage("Krakstack Uptime", statusMarkup);
+
+  expect(statusMarkup).toContain(
+    'data-tooltip="Aug 25, 2026, 04:00 PM EDT: 100.00% uptime"',
+  );
+  expect(statusMarkup).not.toContain(" title=");
+  expect(page).toContain("data-uptime-tooltip hidden");
+  expect(page).toContain('document.addEventListener("pointerover"');
+});
+
 it("renders accessible controls for all uptime ranges", () => {
   const markup = renderPage("Krakstack Uptime", renderStatus(snapshot()));
 

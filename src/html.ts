@@ -58,8 +58,9 @@ const renderBars = (
             : "bad";
     const label =
       percent === null ? "No data" : `${percent.toFixed(2)}% uptime`;
+    const tooltip = `${formatTimestamp(timestamp, timeZone)}: ${label}`;
     bars.push(
-      `<i class="uptime-bar ${tone}" title="${escapeHtml(formatTimestamp(timestamp, timeZone))}: ${label}"></i>`,
+      `<i class="uptime-bar ${tone}" role="img" aria-label="${escapeHtml(tooltip)}" data-tooltip="${escapeHtml(tooltip)}"></i>`,
     );
   }
   return bars.join("");
@@ -251,6 +252,36 @@ export const renderPage = (
       try { localStorage.setItem("uptime-range", range); } catch {}
       applyUptimeRange();
     });
+    let activeTooltipTarget;
+    const hideUptimeTooltip = () => {
+      const tooltip = document.querySelector("[data-uptime-tooltip]");
+      if (tooltip) tooltip.hidden = true;
+      activeTooltipTarget = undefined;
+    };
+    const positionUptimeTooltip = (x, y) => {
+      const tooltip = document.querySelector("[data-uptime-tooltip]");
+      if (!tooltip || tooltip.hidden) return;
+      const gap = 12;
+      const bounds = tooltip.getBoundingClientRect();
+      tooltip.style.left = Math.min(x + gap, window.innerWidth - bounds.width - gap) + "px";
+      tooltip.style.top = Math.max(gap, y - bounds.height - gap) + "px";
+    };
+    document.addEventListener("pointerover", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-tooltip]") : null;
+      const tooltip = document.querySelector("[data-uptime-tooltip]");
+      if (!target || !tooltip) return;
+      activeTooltipTarget = target;
+      tooltip.textContent = target.dataset.tooltip;
+      tooltip.hidden = false;
+      positionUptimeTooltip(event.clientX, event.clientY);
+    });
+    document.addEventListener("pointermove", (event) => {
+      if (activeTooltipTarget) positionUptimeTooltip(event.clientX, event.clientY);
+    });
+    document.addEventListener("pointerout", (event) => {
+      const target = event.target instanceof Element ? event.target.closest("[data-tooltip]") : null;
+      if (target === activeTooltipTarget) hideUptimeTooltip();
+    });
     new MutationObserver(applyUptimeRange).observe(document.documentElement, { childList: true, subtree: true });
     document.addEventListener("DOMContentLoaded", () => {
       applyUptimeRange();
@@ -264,6 +295,7 @@ export const renderPage = (
   <header><a href="/" class="brand"><span class="brand-mark" aria-hidden="true">${uptimeIcon}</span>${escapeHtml(siteName)}</a></header>
   ${content}
   <footer><span>${escapeHtml(siteName)}</span><a href="https://github.com/krakcons/krakstack-uptime/" rel="noreferrer">Powered by krakcons/krakstack-uptime</a></footer>
+  <div class="uptime-tooltip" role="tooltip" data-uptime-tooltip hidden></div>
 </body>
 </html>`;
 
@@ -437,6 +469,8 @@ header { display: flex; align-items: center; height: 5.5rem; }
 .uptime-bar.good { background: var(--operational); }
 .uptime-bar.warn { background: var(--warning); }
 .uptime-bar.bad { background: var(--outage); }
+.uptime-tooltip { position: fixed; z-index: 100; max-width: min(22rem, calc(100vw - 1.5rem)); padding: 0.55rem 0.7rem; color: var(--primary-foreground); background: color-mix(in oklch, var(--foreground) 94%, transparent); border: 1px solid color-mix(in oklch, var(--foreground) 72%, transparent); border-radius: var(--radius); box-shadow: 0 8px 24px hsl(0 0% 0% / 0.2); font-size: 0.75rem; font-weight: 500; line-height: 1.4; pointer-events: none; }
+.uptime-tooltip[hidden] { display: none; }
 .range { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 0.55rem; color: var(--muted-foreground); font-size: 0.625rem; }
 .range span:nth-child(2) { padding-inline: 0.75rem; font-weight: 500; }
 .range span:last-child { text-align: right; }
