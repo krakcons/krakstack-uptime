@@ -1,0 +1,13 @@
+{
+  "siteName": "Acme Status",
+  "monitors": [
+    {
+      "id": "website",
+      "name": "Website",
+      "url": "https://example.com",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    }
+  ]
+}

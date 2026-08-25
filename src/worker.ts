@@ -1,0 +1,90 @@
+import { ServerSentEventGenerator } from "@starfederation/datastar-sdk/web";
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as SQL from "alchemy/SQL/D1";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import statusConfig from "../status.config.json" with { type: "json" };
+import { Database } from "./database.ts";
+import { renderPage, renderStatus } from "./html.ts";
+import { StatusConfigSchema } from "./schema.ts";
+import { HttpClientLive, makeStatus } from "./status.ts";
+
+const config = Schema.decodeUnknownSync(StatusConfigSchema)(statusConfig);
+
+const html = (body: string) =>
+  HttpServerResponse.html(body).pipe(
+    HttpServerResponse.setHeader("cache-control", "no-store"),
+  );
+
+const text = (message: string, status: number) =>
+  HttpServerResponse.text(message, {
+    status,
+    headers: { "cache-control": "no-store" },
+  });
+
+const internalServerError = (cause: Cause.Cause<unknown>) =>
+  Effect.logError(cause).pipe(Effect.as(text("Internal server error", 500)));
+
+export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
+  "StatusWorker",
+  { main: import.meta.url },
+  Effect.gen(function* () {
+    const d1 = yield* Cloudflare.D1.QueryDatabase(Database);
+    const status = yield* makeStatus({ config }).pipe(
+      Effect.provide(SQL.D1Layer(d1)),
+      Effect.provide(HttpClientLive),
+    );
+    const router = yield* HttpRouter.make;
+
+    yield* router.add(
+      "GET",
+      "/",
+      status.loadSnapshot().pipe(
+        Effect.map((snapshot) =>
+          html(renderPage(config.siteName, renderStatus(snapshot))),
+        ),
+        Effect.catchCause(internalServerError),
+      ),
+    );
+
+    yield* router.add(
+      "GET",
+      "/stream",
+      status.loadSnapshot().pipe(
+        Effect.map((snapshot) =>
+          HttpServerResponse.fromWeb(
+            ServerSentEventGenerator.stream((stream) => {
+              stream.patchElements(renderStatus(snapshot), {
+                retryDuration: 15_000,
+              });
+            }),
+          ),
+        ),
+        Effect.catchCause(internalServerError),
+      ),
+    );
+
+    yield* router.add(
+      "GET",
+      "/health",
+      HttpServerResponse.json({ status: "ok" }).pipe(
+        Effect.catchCause(internalServerError),
+      ),
+    );
+    yield* router.add("*", "/*", text("Not found", 404));
+
+    yield* Cloudflare.Workers.cron("* * * * *", () =>
+      status.checkAll().pipe(Effect.tapCause(Effect.logError), Effect.ignore),
+    );
+
+    return {
+      fetch: router.asHttpEffect().pipe(Effect.catchCause(internalServerError)),
+    };
+  }).pipe(
+    Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
+    Effect.provide(Cloudflare.Workers.CronEventSourceLive),
+  ),
+) {}
