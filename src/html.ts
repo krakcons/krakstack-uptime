@@ -258,30 +258,40 @@ export const renderPage = (
       if (tooltip) tooltip.hidden = true;
       activeTooltipTarget = undefined;
     };
-    const positionUptimeTooltip = (x, y) => {
+    const positionUptimeTooltip = (target) => {
       const tooltip = document.querySelector("[data-uptime-tooltip]");
-      if (!tooltip || tooltip.hidden) return;
-      const gap = 12;
+      if (!tooltip || tooltip.hidden || !target) return;
+      const gap = 10;
+      const viewportGap = 8;
+      const targetBounds = target.getBoundingClientRect();
       const bounds = tooltip.getBoundingClientRect();
-      tooltip.style.left = Math.min(x + gap, window.innerWidth - bounds.width - gap) + "px";
-      tooltip.style.top = Math.max(gap, y - bounds.height - gap) + "px";
+      const targetCenter = targetBounds.left + targetBounds.width / 2;
+      const left = Math.max(viewportGap, Math.min(targetCenter - bounds.width / 2, window.innerWidth - bounds.width - viewportGap));
+      const arrowX = Math.max(10, Math.min(targetCenter - left, bounds.width - 10));
+      tooltip.style.left = left + "px";
+      tooltip.style.top = Math.max(viewportGap, targetBounds.top - bounds.height - gap) + "px";
+      tooltip.style.setProperty("--tooltip-arrow-x", arrowX + "px");
     };
-    document.addEventListener("pointerover", (event) => {
-      const target = event.target instanceof Element ? event.target.closest("[data-tooltip]") : null;
+    document.addEventListener("pointermove", (event) => {
+      const eventTarget = event.target instanceof Element ? event.target : null;
+      const bars = eventTarget?.closest(".uptime-bars");
       const tooltip = document.querySelector("[data-uptime-tooltip]");
-      if (!target || !tooltip) return;
+      if (!bars || !tooltip) {
+        hideUptimeTooltip();
+        return;
+      }
+      const targets = bars.querySelectorAll("[data-tooltip]");
+      const bounds = bars.getBoundingClientRect();
+      const offset = Math.max(0, Math.min(event.clientX - bounds.left, bounds.width - 1));
+      const target = eventTarget.closest("[data-tooltip]") ?? targets[Math.min(targets.length - 1, Math.floor(offset / bounds.width * targets.length))];
+      if (!target || target === activeTooltipTarget) return;
       activeTooltipTarget = target;
       tooltip.textContent = target.dataset.tooltip;
       tooltip.hidden = false;
-      positionUptimeTooltip(event.clientX, event.clientY);
+      positionUptimeTooltip(target);
     });
-    document.addEventListener("pointermove", (event) => {
-      if (activeTooltipTarget) positionUptimeTooltip(event.clientX, event.clientY);
-    });
-    document.addEventListener("pointerout", (event) => {
-      const target = event.target instanceof Element ? event.target.closest("[data-tooltip]") : null;
-      if (target === activeTooltipTarget) hideUptimeTooltip();
-    });
+    window.addEventListener("resize", () => positionUptimeTooltip(activeTooltipTarget));
+    document.addEventListener("pointerleave", hideUptimeTooltip);
     new MutationObserver(applyUptimeRange).observe(document.documentElement, { childList: true, subtree: true });
     document.addEventListener("DOMContentLoaded", () => {
       applyUptimeRange();
@@ -470,6 +480,7 @@ header { display: flex; align-items: center; height: 5.5rem; }
 .uptime-bar.warn { background: var(--warning); }
 .uptime-bar.bad { background: var(--outage); }
 .uptime-tooltip { position: fixed; z-index: 100; max-width: min(22rem, calc(100vw - 1.5rem)); padding: 0.55rem 0.7rem; color: var(--primary-foreground); background: color-mix(in oklch, var(--foreground) 94%, transparent); border: 1px solid color-mix(in oklch, var(--foreground) 72%, transparent); border-radius: var(--radius); box-shadow: 0 8px 24px hsl(0 0% 0% / 0.2); font-size: 0.75rem; font-weight: 500; line-height: 1.4; pointer-events: none; }
+.uptime-tooltip::after { position: absolute; bottom: -5px; left: var(--tooltip-arrow-x, 50%); width: 8px; height: 8px; background: color-mix(in oklch, var(--foreground) 94%, transparent); border-right: 1px solid color-mix(in oklch, var(--foreground) 72%, transparent); border-bottom: 1px solid color-mix(in oklch, var(--foreground) 72%, transparent); content: ""; transform: translateX(-50%) rotate(45deg); }
 .uptime-tooltip[hidden] { display: none; }
 .range { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-top: 0.55rem; color: var(--muted-foreground); font-size: 0.625rem; }
 .range span:nth-child(2) { padding-inline: 0.75rem; font-weight: 500; }

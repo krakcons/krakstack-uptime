@@ -102,7 +102,9 @@ it("renders immediate custom uptime tooltips", () => {
   );
   expect(statusMarkup).not.toContain(" title=");
   expect(page).toContain("data-uptime-tooltip hidden");
-  expect(page).toContain('document.addEventListener("pointerover"');
+  expect(page).toContain('document.addEventListener("pointermove"');
+  expect(page).toContain('closest(".uptime-bars")');
+  expect(page).toContain("offset / bounds.width * targets.length");
 });
 
 it("renders accessible controls for all uptime ranges", () => {
