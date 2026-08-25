@@ -6,10 +6,13 @@ import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import { shouldAlert, type StatusAlert } from "./alerts.ts";
 import {
+  AlertStateRowSchema,
   BucketRowSchema,
   LatestCheckRowSchema,
   MonitorCheckError,
+  PendingAlertRowSchema,
   type MonitorConfig,
   type MonitorRow,
   type Snapshot,
@@ -26,6 +29,12 @@ const decodeLatestChecks = Schema.decodeUnknownEffect(
 const decodeBucketRows = Schema.decodeUnknownEffect(
   Schema.Array(BucketRowSchema),
 );
+const decodeAlertStateRows = Schema.decodeUnknownEffect(
+  Schema.Array(AlertStateRowSchema),
+);
+const decodePendingAlertRows = Schema.decodeUnknownEffect(
+  Schema.Array(PendingAlertRowSchema),
+);
 
 export const HttpClientLive = FetchHttpClient.layer;
 
@@ -36,6 +45,44 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
 }) {
   const sql = yield* SqlClient.SqlClient;
   const httpClient = (yield* HttpClient.HttpClient).pipe(HttpClient.withScope);
+  const monitorsById = new Map(
+    config.monitors.map((monitor) => [monitor.id, monitor]),
+  );
+
+  const recordAlertTransition = Effect.fn("Status.recordAlertTransition")(
+    function* ({
+      monitorId,
+      ok,
+      checkedAt,
+    }: {
+      readonly monitorId: string;
+      readonly ok: 0 | 1;
+      readonly checkedAt: number;
+    }) {
+      const states = yield* sql`
+        SELECT ok
+        FROM monitor_alert_state
+        WHERE monitor_id = ${monitorId}
+        LIMIT 1
+      `.pipe(Effect.flatMap(decodeAlertStateRows));
+      const previous = states[0]?.ok;
+      if (previous === ok) return;
+
+      yield* sql`
+        INSERT INTO monitor_alert_state (monitor_id, ok, updated_at)
+        VALUES (${monitorId}, ${ok}, ${checkedAt})
+        ON CONFLICT (monitor_id) DO UPDATE SET
+          ok = excluded.ok,
+          updated_at = excluded.updated_at
+      `;
+      if (!config.alerts || !shouldAlert(previous, ok)) return;
+
+      yield* sql`
+        INSERT INTO alert_outbox (monitor_id, ok, created_at)
+        VALUES (${monitorId}, ${ok}, ${checkedAt})
+      `;
+    },
+  );
 
   const loadSnapshot = Effect.fn("Status.loadSnapshot")(function* () {
     const latest = yield* sql`
@@ -122,6 +169,7 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
         INSERT INTO checks (monitor_id, checked_at, ok, status_code, latency_ms, error)
         VALUES (${monitor.id}, ${checkedAt}, 0, NULL, ${latency}, ${result.failure.message})
       `;
+      yield* recordAlertTransition({ monitorId: monitor.id, ok: 0, checkedAt });
       return;
     }
 
@@ -130,6 +178,7 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
       INSERT INTO checks (monitor_id, checked_at, ok, status_code, latency_ms, error)
       VALUES (${monitor.id}, ${checkedAt}, ${ok}, ${result.success}, ${latency}, NULL)
     `;
+    yield* recordAlertTransition({ monitorId: monitor.id, ok, checkedAt });
   });
 
   const checkAll = Effect.fn("Status.checkAll")(function* () {
@@ -139,7 +188,44 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     });
     const now = yield* Clock.currentTimeMillis;
     yield* sql`DELETE FROM checks WHERE checked_at < ${now - 91 * DAY}`;
+    yield* sql`
+      DELETE FROM alert_outbox
+      WHERE sent_at IS NOT NULL AND sent_at < ${now - 91 * DAY}
+    `;
+
+    const pending = yield* sql`
+      SELECT id, monitor_id, ok, created_at
+      FROM alert_outbox
+      WHERE sent_at IS NULL
+      ORDER BY id
+    `.pipe(Effect.flatMap(decodePendingAlertRows));
+    return pending.flatMap((alert): ReadonlyArray<StatusAlert> => {
+      const monitor = monitorsById.get(alert.monitor_id);
+      return monitor
+        ? [
+            {
+              ...alert,
+              group: monitor.group,
+              name: monitor.name,
+              url: monitor.url.toString(),
+            },
+          ]
+        : [];
+    });
   });
 
-  return { loadSnapshot, checkAll };
+  const markAlertSent = Effect.fn("Status.markAlertSent")(function* ({
+    id,
+  }: {
+    readonly id: number;
+  }) {
+    const sentAt = yield* Clock.currentTimeMillis;
+    yield* sql`
+      UPDATE alert_outbox
+      SET sent_at = ${sentAt}
+      WHERE id = ${id}
+    `;
+  });
+
+  return { loadSnapshot, checkAll, markAlertSent };
 });

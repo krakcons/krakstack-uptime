@@ -34,6 +34,32 @@ describe("StatusConfigSchema", () => {
     ).toBe("status.example.com");
   });
 
+  it("decodes alert sender and recipient emails", () => {
+    const decoded = decodeConfig({
+      ...config,
+      alerts: {
+        from: "status@example.com",
+        emails: ["ops@example.com", "owner@example.com"],
+      },
+    });
+
+    expect(decoded.alerts?.emails).toEqual([
+      "ops@example.com",
+      "owner@example.com",
+    ]);
+  });
+
+  it.each([
+    ["an invalid sender", { from: "invalid", emails: ["ops@example.com"] }],
+    [
+      "an invalid recipient",
+      { from: "status@example.com", emails: ["invalid"] },
+    ],
+    ["no recipients", { from: "status@example.com", emails: [] }],
+  ])("rejects alert configuration with %s", (_name, alerts) => {
+    expect(() => decodeConfig({ ...config, alerts })).toThrow();
+  });
+
   it("rejects unsupported HTTP methods", () => {
     expect(() =>
       decodeConfig({
