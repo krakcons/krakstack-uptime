@@ -2,6 +2,7 @@ import { ServerSentEventGenerator } from "@starfederation/datastar-sdk/web";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as SQL from "alchemy/SQL/D1";
 import * as Cause from "effect/Cause";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -28,9 +29,13 @@ const text = (message: string, status: number) =>
 const internalServerError = (cause: Cause.Cause<unknown>) =>
   Effect.logError(cause).pipe(Effect.as(text("Internal server error", 500)));
 
+const workerProps = config.domain
+  ? { main: import.meta.url, domain: config.domain }
+  : { main: import.meta.url };
+
 export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
   "StatusWorker",
-  { main: import.meta.url },
+  workerProps,
   Effect.gen(function* () {
     const d1 = yield* Cloudflare.D1.QueryDatabase(Database);
     const status = yield* makeStatus({ config }).pipe(
@@ -39,10 +44,28 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
     );
     const router = yield* HttpRouter.make;
 
+    const loadFreshSnapshot = status
+      .loadSnapshot()
+      .pipe(
+        Effect.flatMap((snapshot) =>
+          Clock.currentTimeMillis.pipe(
+            Effect.flatMap((now) =>
+              snapshot.monitors.some(
+                (monitor) =>
+                  monitor.last_checked_at === null ||
+                  monitor.last_checked_at < now - 90_000,
+              )
+                ? status.checkAll().pipe(Effect.andThen(status.loadSnapshot()))
+                : Effect.succeed(snapshot),
+            ),
+          ),
+        ),
+      );
+
     yield* router.add(
       "GET",
       "/",
-      status.loadSnapshot().pipe(
+      loadFreshSnapshot.pipe(
         Effect.map((snapshot) =>
           html(renderPage(config.siteName, renderStatus(snapshot))),
         ),
@@ -53,7 +76,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
     yield* router.add(
       "GET",
       "/stream",
-      status.loadSnapshot().pipe(
+      loadFreshSnapshot.pipe(
         Effect.map((snapshot) =>
           HttpServerResponse.fromWeb(
             ServerSentEventGenerator.stream((stream) => {

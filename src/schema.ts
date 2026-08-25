@@ -6,6 +6,7 @@ export const MonitorMethodSchema = Schema.Literals(["GET", "HEAD"]).annotate({
 
 export const MonitorConfigSchema = Schema.Struct({
   id: Schema.NonEmptyString,
+  group: Schema.NonEmptyString,
   name: Schema.NonEmptyString,
   url: Schema.URLFromString,
   method: MonitorMethodSchema,
@@ -21,6 +22,7 @@ export const MonitorConfigSchema = Schema.Struct({
 
 export const StatusConfigSchema = Schema.Struct({
   siteName: Schema.NonEmptyString,
+  domain: Schema.optional(Schema.NonEmptyString),
   monitors: Schema.Array(MonitorConfigSchema),
 }).annotate({ identifier: "StatusConfig" });
 
@@ -31,15 +33,16 @@ export const LatestCheckRowSchema = Schema.Struct({
   latency_ms: Schema.Int,
 }).annotate({ identifier: "LatestCheckRow" });
 
-export const DailyRowSchema = Schema.Struct({
+export const BucketRowSchema = Schema.Struct({
   monitor_id: Schema.String,
-  day: Schema.Int,
+  bucket: Schema.Int,
   successful: Schema.Int,
   total: Schema.Int,
-}).annotate({ identifier: "DailyRow" });
+}).annotate({ identifier: "BucketRow" });
 
 export const MonitorRowSchema = Schema.Struct({
   id: Schema.String,
+  group: Schema.String,
   name: Schema.String,
   url: Schema.String,
   method: MonitorMethodSchema,
@@ -53,7 +56,9 @@ export const MonitorRowSchema = Schema.Struct({
 
 export const SnapshotSchema = Schema.Struct({
   monitors: Schema.Array(MonitorRowSchema),
-  daily: Schema.Array(DailyRowSchema),
+  minutes: Schema.Array(BucketRowSchema),
+  hours: Schema.Array(BucketRowSchema),
+  days: Schema.Array(BucketRowSchema),
 }).annotate({ identifier: "Snapshot" });
 
 export class MonitorCheckError extends Schema.TaggedError<MonitorCheckError>()(
@@ -64,7 +69,7 @@ export class MonitorCheckError extends Schema.TaggedError<MonitorCheckError>()(
   },
 ) {}
 
-export type DailyRow = typeof DailyRowSchema.Type;
+export type BucketRow = typeof BucketRowSchema.Type;
 export type MonitorConfig = typeof MonitorConfigSchema.Type;
 export type MonitorRow = typeof MonitorRowSchema.Type;
 export type Snapshot = typeof SnapshotSchema.Type;

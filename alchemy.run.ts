@@ -5,7 +5,7 @@ import StatusWorker from "./src/worker.ts";
 import { Database } from "./src/database.ts";
 
 export default Alchemy.Stack(
-  "KrakStatus",
+  "KrakstackUptime",
   {
     providers: Cloudflare.providers(),
     state: Alchemy.localState(),

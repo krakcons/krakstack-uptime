@@ -1,8 +1,9 @@
 {
-  "siteName": "Acme Status",
+  "siteName": "Krakstack Uptime",
   "monitors": [
     {
       "id": "website",
+      "group": "Apps",
       "name": "Website",
       "url": "https://example.com",
       "method": "GET",

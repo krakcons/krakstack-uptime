@@ -5,13 +5,13 @@
   "type": "module",
   "scripts": {
     "dev": "alchemy dev",
-    "deploy": "alchemy deploy",
-    "destroy": "alchemy destroy",
+    "deploy": "alchemy deploy --stage prod",
+    "destroy": "alchemy destroy --stage prod",
     "lint": "oxlint",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "vitest run"
   },
   "dependencies": {
     "@effect/platform-bun": "4.0.0-rc.111",
@@ -22,9 +22,11 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260821.1",
+    "@effect/vitest": "4.0.0-rc.111",
     "@krak-stack/registry": "0.1.19",
     "oxfmt": "^0.64.0",
     "oxlint": "^1.79.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^4.1.11"
   }
 }

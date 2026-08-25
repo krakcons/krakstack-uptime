@@ -1,4 +1,4 @@
-import type { DailyRow, MonitorRow, Snapshot } from "./schema.ts";
+import type { BucketRow, MonitorRow, Snapshot } from "./schema.ts";
 
 interface OverallState {
   readonly label: string;
@@ -6,6 +6,10 @@ interface OverallState {
 }
 
 const uptimeIcon = `<svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 17h6l3-7 5 13 3-7h5" /></svg>`;
+
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
 
 const escapeHtml = (value: string | number): string =>
   String(value)
@@ -36,19 +40,20 @@ export const overallState = (snapshot: Snapshot): OverallState => {
 
 const renderBars = (
   monitor: MonitorRow,
-  daily: ReadonlyArray<DailyRow>,
+  rows: ReadonlyArray<BucketRow>,
+  interval: number,
   now: number,
 ): string => {
-  const byDay = new Map(
-    daily
+  const byBucket = new Map(
+    rows
       .filter((row) => row.monitor_id === monitor.id)
-      .map((row) => [row.day, row]),
+      .map((row) => [row.bucket, row]),
   );
   const bars: Array<string> = [];
   for (let offset = 89; offset >= 0; offset--) {
-    const timestamp = now - offset * 86_400_000;
-    const day = Math.floor(timestamp / 86_400_000);
-    const row = byDay.get(day);
+    const bucket = Math.floor(now / interval) - offset;
+    const timestamp = bucket * interval;
+    const row = byBucket.get(bucket);
     const percent =
       row && row.total > 0 ? (row.successful / row.total) * 100 : null;
     const tone =
@@ -68,21 +73,37 @@ const renderBars = (
   return bars.join("");
 };
 
-const monitorUptime = (
-  monitorId: string,
-  daily: ReadonlyArray<DailyRow>,
+const aggregateUptime = (
+  monitorIds: ReadonlySet<string>,
+  rows: ReadonlyArray<BucketRow>,
 ): string => {
-  const rows = daily.filter((row) => row.monitor_id === monitorId);
-  const total = rows.reduce((sum, row) => sum + row.total, 0);
-  const successful = rows.reduce((sum, row) => sum + row.successful, 0);
+  const monitorRows = rows.filter((row) => monitorIds.has(row.monitor_id));
+  const total = monitorRows.reduce((sum, row) => sum + row.total, 0);
+  const successful = monitorRows.reduce((sum, row) => sum + row.successful, 0);
   return total === 0
     ? "No data"
     : `${((successful / total) * 100).toFixed(2)}% uptime`;
 };
 
+const monitorUptime = (
+  monitorId: string,
+  rows: ReadonlyArray<BucketRow>,
+): string => aggregateUptime(new Set([monitorId]), rows);
+
+const renderRange = (
+  monitor: MonitorRow,
+  rows: ReadonlyArray<BucketRow>,
+  range: "minutes" | "hours" | "days",
+  interval: number,
+  now: number,
+): string => `<div class="range-view" data-range-view="${range}">
+    <div class="uptime-bars" aria-label="90-${range} uptime for ${escapeHtml(monitor.name)}">${renderBars(monitor, rows, interval, now)}</div>
+    <div class="range"><span>90 ${range} ago</span><span>${monitorUptime(monitor.id, rows)}</span><span>Now</span></div>
+  </div>`;
+
 const renderMonitor = (
   monitor: MonitorRow,
-  daily: ReadonlyArray<DailyRow>,
+  snapshot: Snapshot,
   now: number,
 ): string => {
   const tone =
@@ -99,17 +120,60 @@ const renderMonitor = (
         : "Major outage";
   return `<article class="component">
     <div class="component-line">
-      <div class="component-name"><strong>${escapeHtml(monitor.name)}</strong><small>${escapeHtml(monitor.url)}</small></div>
+      <div class="component-name"><strong>${escapeHtml(monitor.name)}</strong><a href="${escapeHtml(monitor.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(monitor.url)}</a></div>
       <span class="component-status ${tone}"><i></i>${label}</span>
     </div>
-    <div class="uptime-bars" aria-label="90-day uptime for ${escapeHtml(monitor.name)}">${renderBars(monitor, daily, now)}</div>
-    <div class="range"><span>90 days ago</span><span>${monitorUptime(monitor.id, daily)}</span><span>Today</span></div>
+    ${renderRange(monitor, snapshot.minutes, "minutes", MINUTE, now)}
+    ${renderRange(monitor, snapshot.hours, "hours", HOUR, now)}
+    ${renderRange(monitor, snapshot.days, "days", DAY, now)}
   </article>`;
+};
+
+const renderGroupAggregate = (
+  monitors: ReadonlyArray<MonitorRow>,
+  rows: ReadonlyArray<BucketRow>,
+  range: "minutes" | "hours" | "days",
+): string => {
+  const uptime = aggregateUptime(
+    new Set(monitors.map((monitor) => monitor.id)),
+    rows,
+  );
+  return `<div class="group-aggregate range-view" data-range-view="${range}"><strong>${uptime}</strong><span>Aggregate over 90 ${range}</span></div>`;
+};
+
+const renderGroup = (
+  group: string,
+  monitors: ReadonlyArray<MonitorRow>,
+  snapshot: Snapshot,
+  now: number,
+): string => {
+  const operational = monitors.filter(
+    (monitor) => monitor.last_ok === 1,
+  ).length;
+  return `<section class="service-group" aria-labelledby="group-${escapeHtml(group)}">
+    <div class="group-heading">
+      <div><p class="eyebrow">Group</p><h3 id="group-${escapeHtml(group)}">${escapeHtml(group)}</h3><span>${operational} of ${monitors.length} operational</span></div>
+      ${renderGroupAggregate(monitors, snapshot.minutes, "minutes")}
+      ${renderGroupAggregate(monitors, snapshot.hours, "hours")}
+      ${renderGroupAggregate(monitors, snapshot.days, "days")}
+    </div>
+    ${monitors.map((monitor) => renderMonitor(monitor, snapshot, now)).join("")}
+  </section>`;
 };
 
 export const renderStatus = (snapshot: Snapshot, now = Date.now()): string => {
   const state = overallState(snapshot);
-  return `<main id="status-content">
+  const latestCheckedAt = Math.max(
+    0,
+    ...snapshot.monitors.map((monitor) => monitor.last_checked_at ?? 0),
+  );
+  const groups = new Map<string, Array<MonitorRow>>();
+  for (const monitor of snapshot.monitors) {
+    const group = groups.get(monitor.group) ?? [];
+    group.push(monitor);
+    groups.set(monitor.group, group);
+  }
+  return `<main id="status-content" data-range="days">
     <section class="overall ${state.tone}">
       <span class="status-icon" aria-hidden="true">${uptimeIcon}</span>
       <p class="eyebrow">Current status</p>
@@ -117,12 +181,21 @@ export const renderStatus = (snapshot: Snapshot, now = Date.now()): string => {
       <p class="summary">Availability and uptime for every monitored service.</p>
     </section>
     <section class="components" aria-label="Systems">
-      <div class="section-heading"><div><p class="eyebrow">Services</p><h2>System availability</h2></div><span>Uptime over the past 90 days</span></div>
+      <div class="section-heading"><div><p class="eyebrow">Services</p><h2>System availability</h2></div><div class="status-tools">
+        <div class="range-controls" aria-label="Uptime range">
+          <button type="button" data-range-button="minutes" aria-pressed="false">Minutes</button>
+          <button type="button" data-range-button="hours" aria-pressed="false">Hours</button>
+          <button type="button" data-range-button="days" aria-pressed="true">Days</button>
+        </div>
+        <span class="next-check" data-next-check data-last-check="${latestCheckedAt}">Next check pending</span>
+      </div></div>
       ${
         snapshot.monitors.length === 0
           ? `<div class="empty-state">No monitors have been configured yet.</div>`
-          : snapshot.monitors
-              .map((monitor) => renderMonitor(monitor, snapshot.daily, now))
+          : [...groups]
+              .map(([group, monitors]) =>
+                renderGroup(group, monitors, snapshot, now),
+              )
               .join("")
       }
     </section>
@@ -145,6 +218,47 @@ export const renderPage = (
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&amp;display=swap">
   <script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js"></script>
+  <script>
+    const uptimeRanges = new Set(["minutes", "hours", "days"]);
+    let selectedUptimeRange = "days";
+    try {
+      const savedRange = localStorage.getItem("uptime-range");
+      if (savedRange && uptimeRanges.has(savedRange)) selectedUptimeRange = savedRange;
+    } catch {}
+    const applyUptimeRange = () => {
+      const content = document.querySelector("#status-content");
+      if (!content) return;
+      content.dataset.range = selectedUptimeRange;
+      for (const button of content.querySelectorAll("[data-range-button]")) {
+        button.setAttribute("aria-pressed", String(button.dataset.rangeButton === selectedUptimeRange));
+      }
+    };
+    const updateNextCheck = () => {
+      const countdown = document.querySelector("[data-next-check]");
+      if (!countdown) return;
+      const lastCheck = Number(countdown.dataset.lastCheck);
+      if (!lastCheck) {
+        countdown.textContent = "Next check pending";
+        return;
+      }
+      const seconds = Math.max(0, Math.ceil((lastCheck + 60000 - Date.now()) / 1000));
+      countdown.textContent = seconds > 0 ? "Next check in " + seconds + "s" : "Check due";
+    };
+    document.addEventListener("click", (event) => {
+      const button = event.target instanceof Element ? event.target.closest("[data-range-button]") : null;
+      const range = button?.dataset.rangeButton;
+      if (!range || !uptimeRanges.has(range)) return;
+      selectedUptimeRange = range;
+      try { localStorage.setItem("uptime-range", range); } catch {}
+      applyUptimeRange();
+    });
+    new MutationObserver(applyUptimeRange).observe(document.documentElement, { childList: true, subtree: true });
+    document.addEventListener("DOMContentLoaded", () => {
+      applyUptimeRange();
+      updateNextCheck();
+    });
+    setInterval(updateNextCheck, 1000);
+  </script>
   <style>${styles}</style>
 </head>
 <body data-init="@get('/stream', {retry: 'always', retryInterval: 15000, openWhenHidden: true})">
@@ -280,7 +394,21 @@ header { display: flex; align-items: center; height: 5.5rem; }
 .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 2rem; margin-bottom: 1.25rem; }
 .section-heading .eyebrow { margin-bottom: 0.35rem; }
 .section-heading h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.75rem); font-weight: 600; letter-spacing: -0.025em; }
-.section-heading > span { padding-bottom: 0.2rem; color: var(--muted-foreground); font-size: 0.75rem; }
+.status-tools { display: grid; justify-items: end; gap: 0.4rem; }
+.range-controls { display: flex; gap: 0.25rem; padding: 0.2rem; background: var(--muted); border-radius: var(--radius); }
+.range-controls button { padding: 0.45rem 0.65rem; color: var(--muted-foreground); background: transparent; border: 0; border-radius: calc(var(--radius) * 0.7); font: inherit; font-size: 0.6875rem; cursor: pointer; }
+.range-controls button[aria-pressed="true"] { color: var(--card-foreground); background: var(--card); box-shadow: 0 1px 2px hsl(0 0% 0% / 0.08); }
+.range-controls button:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
+.next-check { color: var(--muted-foreground); font-size: 0.625rem; font-variant-numeric: tabular-nums; }
+.service-group { margin-top: 2rem; }
+.group-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-inline: 0.25rem; }
+.group-heading .eyebrow { margin-bottom: 0.25rem; }
+.group-heading h3 { display: inline; margin: 0; font-size: 1rem; font-weight: 600; }
+.group-heading h3 + span { margin-left: 0.6rem; color: var(--muted-foreground); font-size: 0.6875rem; }
+.group-aggregate { text-align: right; }
+.group-aggregate strong, .group-aggregate span { display: block; }
+.group-aggregate strong { font-size: 0.875rem; font-weight: 600; }
+.group-aggregate span { margin-top: 0.15rem; color: var(--muted-foreground); font-size: 0.625rem; }
 .component, .empty-state {
   margin-top: 0.75rem;
   padding: clamp(1.1rem, 3vw, 1.5rem);
@@ -292,13 +420,19 @@ header { display: flex; align-items: center; height: 5.5rem; }
 }
 .component-line { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
 .component-name { min-width: 0; }
-.component-name strong, .component-name small { display: block; }
+.component-name strong, .component-name a { display: block; }
 .component-name strong { font-size: 0.9375rem; font-weight: 600; }
-.component-name small { margin-top: 0.3rem; overflow: hidden; color: var(--muted-foreground); font-size: 0.7rem; text-overflow: ellipsis; white-space: nowrap; }
+.component-name a { margin-top: 0.3rem; overflow: hidden; color: var(--muted-foreground); font-size: 0.7rem; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
+.component-name a:hover { color: var(--foreground); text-decoration: underline; }
+.component-name a:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; border-radius: 2px; }
 .component-status { display: inline-flex; align-items: center; flex: none; gap: 0.45rem; color: var(--operational); font-size: 0.75rem; font-weight: 500; }
 .component-status i { width: 0.45rem; height: 0.45rem; background: currentColor; border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in oklch, currentColor 14%, transparent); }
 .component-status.major { color: var(--outage); }
 .component-status.unknown { color: var(--muted-foreground); }
+.range-view { display: none; }
+#status-content[data-range="minutes"] [data-range-view="minutes"],
+#status-content[data-range="hours"] [data-range-view="hours"],
+#status-content[data-range="days"] [data-range-view="days"] { display: block; }
 .uptime-bars { height: 2rem; display: grid; grid-template-columns: repeat(90, 1fr); gap: 2px; margin-top: 1.25rem; }
 .uptime-bar { display: block; background: var(--muted); border-radius: 2px; }
 .uptime-bar.good { background: var(--operational); }
@@ -323,11 +457,13 @@ footer a:focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; bo
 @media (max-width: 700px) {
   header { height: 4.5rem; }
   .overall { padding-inline: 0; }
-  .section-heading { align-items: start; }
-  .section-heading > span { max-width: 9rem; text-align: right; }
+  .section-heading { align-items: start; gap: 1rem; }
+  .range-controls { flex-wrap: wrap; justify-content: end; }
+  .range-controls button { padding-inline: 0.5rem; }
+  .group-heading { align-items: start; }
   .uptime-bars { height: 1.5rem; gap: 1px; grid-template-columns: repeat(60, 1fr); }
   .uptime-bar:nth-child(-n + 30) { display: none; }
-  .component-name small { max-width: 13rem; }
+  .component-name a { max-width: 13rem; }
   .range span:first-child { font-size: 0; }
   .range span:first-child::after { content: "60 days ago"; font-size: 0.625rem; }
   footer { display: grid; }

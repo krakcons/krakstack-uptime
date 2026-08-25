@@ -1,4 +1,4 @@
-# Krak Status
+# Krakstack Uptime
 
 A small, configuration-driven uptime page for Cloudflare. It uses:
 
@@ -23,10 +23,11 @@ Edit `status.config.json`:
 
 ```json
 {
-  "siteName": "Acme Status",
+  "siteName": "Krakstack Uptime",
   "monitors": [
     {
       "id": "website",
+      "group": "Apps",
       "name": "Website",
       "url": "https://example.com",
       "method": "GET",
@@ -42,6 +43,7 @@ Each monitor requires:
 | Field            | Description                                                                             |
 | ---------------- | --------------------------------------------------------------------------------------- |
 | `id`             | Stable unique identifier used for D1 history. Keep it unchanged when editing a monitor. |
+| `group`          | Section used to group monitors and calculate aggregate uptime.                          |
 | `name`           | Public display name.                                                                    |
 | `url`            | HTTP or HTTPS endpoint to check.                                                        |
 | `method`         | `GET` or `HEAD`.                                                                        |
@@ -86,7 +88,7 @@ Deploy the configured status page:
 bun run deploy
 ```
 
-Alchemy creates D1, applies `migrations/`, deploys the Worker, and registers the one-minute cron. Deployment state is kept under `.alchemy/`; retain it for later updates and destruction.
+Alchemy deploys the production Worker and D1 resources in the `prod` stage, applies `migrations/`, and registers the one-minute cron. Deployment state is kept under `.alchemy/`; retain it for later updates and destruction. Local `bun run dev` resources use a separate development stage and do not replace production uptime history.
 
 Edit `status.config.json` and deploy again whenever monitors change. Reusing a monitor's `id` preserves its existing uptime history.
 
@@ -107,12 +109,13 @@ bun run fmt
 
 ## Custom Domain
 
-The default deployment uses a `workers.dev` URL. To use a domain already managed by your Cloudflare account, add `domain` to the Worker options in `src/worker.ts`:
+The default deployment uses a `workers.dev` URL. To use a domain already managed by your Cloudflare account, add `domain` to `status.config.json`:
 
-```ts
+```json
 {
-  main: import.meta.url,
-  domain: "status.example.com",
+  "siteName": "Krakstack Uptime",
+  "domain": "status.example.com",
+  "monitors": []
 }
 ```
 
