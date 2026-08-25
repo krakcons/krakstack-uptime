@@ -86,6 +86,8 @@ To email once when a monitor enters an outage and again when it recovers, add an
 
 The sender domain must be configured for Cloudflare Email, and every recipient must be verified in the Cloudflare account. Cloudflare limits a message to 50 recipients. Failed deliveries remain in a D1 outbox and are retried by later checks; successful transition alerts are not sent again.
 
+Each scheduled check makes up to three request attempts. A monitor enters an outage after failed checks in two consecutive minute buckets and recovers after its next successful check. Individual failed checks still count against uptime even when they do not become a confirmed outage.
+
 ## Local Development
 
 Prerequisites:

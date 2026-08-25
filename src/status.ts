@@ -11,6 +11,7 @@ import {
   AlertStateRowSchema,
   BucketRowSchema,
   LatestCheckRowSchema,
+  MonitorAlertStateRowSchema,
   MonitorCheckError,
   PendingAlertRowSchema,
   type MonitorConfig,
@@ -32,11 +33,29 @@ const decodeBucketRows = Schema.decodeUnknownEffect(
 const decodeAlertStateRows = Schema.decodeUnknownEffect(
   Schema.Array(AlertStateRowSchema),
 );
+const decodeMonitorAlertStateRows = Schema.decodeUnknownEffect(
+  Schema.Array(MonitorAlertStateRowSchema),
+);
 const decodePendingAlertRows = Schema.decodeUnknownEffect(
   Schema.Array(PendingAlertRowSchema),
 );
 
 export const HttpClientLive = FetchHttpClient.layer;
+
+export const nextConfirmedStatus = (
+  previous: 0 | 1 | undefined,
+  current: 0 | 1,
+  recent: ReadonlyArray<0 | 1>,
+): 0 | 1 | undefined =>
+  current === 1
+    ? 1
+    : recent.length >= 2 && recent[0] === 0 && recent[1] === 0
+      ? 0
+      : previous;
+
+export const retryMonitorCheck = <A, E, R>(
+  attempt: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> => attempt.pipe(Effect.retry({ times: 2 }));
 
 export const makeStatus = Effect.fn("Status.make")(function* ({
   config,
@@ -66,20 +85,38 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
         LIMIT 1
       `.pipe(Effect.flatMap(decodeAlertStateRows));
       const previous = states[0]?.ok;
-      if (previous === ok) return;
+      const recent = yield* sql`
+        SELECT c.ok
+        FROM checks c
+        INNER JOIN (
+          SELECT MAX(id) AS id
+          FROM checks
+          WHERE monitor_id = ${monitorId}
+          GROUP BY CAST(checked_at / ${MINUTE} AS INTEGER)
+          ORDER BY id DESC
+          LIMIT 2
+        ) latest ON latest.id = c.id
+        ORDER BY c.id DESC
+      `.pipe(Effect.flatMap(decodeAlertStateRows));
+      const confirmed = nextConfirmedStatus(
+        previous,
+        ok,
+        recent.map((check) => check.ok),
+      );
+      if (confirmed === undefined || previous === confirmed) return;
 
       yield* sql`
         INSERT INTO monitor_alert_state (monitor_id, ok, updated_at)
-        VALUES (${monitorId}, ${ok}, ${checkedAt})
+        VALUES (${monitorId}, ${confirmed}, ${checkedAt})
         ON CONFLICT (monitor_id) DO UPDATE SET
           ok = excluded.ok,
           updated_at = excluded.updated_at
       `;
-      if (!config.alerts || !shouldAlert(previous, ok)) return;
+      if (!config.alerts || !shouldAlert(previous, confirmed)) return;
 
       yield* sql`
         INSERT INTO alert_outbox (monitor_id, ok, created_at)
-        VALUES (${monitorId}, ${ok}, ${checkedAt})
+        VALUES (${monitorId}, ${confirmed}, ${checkedAt})
       `;
     },
   );
@@ -97,6 +134,13 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     const latestByMonitor = new Map(
       latest.map((check) => [check.monitor_id, check]),
     );
+    const alertStates = yield* sql`
+      SELECT monitor_id, ok
+      FROM monitor_alert_state
+    `.pipe(Effect.flatMap(decodeMonitorAlertStateRows));
+    const alertStateByMonitor = new Map(
+      alertStates.map((state) => [state.monitor_id, state.ok]),
+    );
     const monitors: ReadonlyArray<MonitorRow> = config.monitors.map(
       (monitor) => {
         const check = latestByMonitor.get(monitor.id);
@@ -109,7 +153,7 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
           expected_status: monitor.expectedStatus,
           timeout_ms: monitor.timeoutMs,
           active: 1,
-          last_ok: check?.ok ?? null,
+          last_ok: alertStateByMonitor.get(monitor.id) ?? null,
           last_checked_at: check?.checked_at ?? null,
           last_latency_ms: check?.latency_ms ?? null,
         };
@@ -149,12 +193,24 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     const request = HttpClientRequest.make(monitor.method)(monitor.url, {
       headers: { "user-agent": "KrakstackUptime/1.0" },
     });
-    const result = yield* Effect.scoped(
-      httpClient.execute(request).pipe(
-        Effect.timeout(Duration.millis(monitor.timeoutMs)),
-        Effect.map((response) => response.status),
-        Effect.mapError(
-          (cause) => new MonitorCheckError({ message: String(cause), cause }),
+    const result = yield* retryMonitorCheck(
+      Effect.scoped(
+        httpClient.execute(request).pipe(
+          Effect.timeout(Duration.millis(monitor.timeoutMs)),
+          Effect.mapError(
+            (cause) => new MonitorCheckError({ message: String(cause), cause }),
+          ),
+          Effect.flatMap((response) =>
+            response.status === monitor.expectedStatus
+              ? Effect.succeed(response.status)
+              : Effect.fail(
+                  new MonitorCheckError({
+                    message: `Expected status ${monitor.expectedStatus}, received ${response.status}`,
+                    cause: response.status,
+                    statusCode: response.status,
+                  }),
+                ),
+          ),
         ),
       ),
     ).pipe(Effect.result);
@@ -167,18 +223,17 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     if (result._tag === "Failure") {
       yield* sql`
         INSERT INTO checks (monitor_id, checked_at, ok, status_code, latency_ms, error)
-        VALUES (${monitor.id}, ${checkedAt}, 0, NULL, ${latency}, ${result.failure.message})
+        VALUES (${monitor.id}, ${checkedAt}, 0, ${result.failure.statusCode ?? null}, ${latency}, ${result.failure.message})
       `;
       yield* recordAlertTransition({ monitorId: monitor.id, ok: 0, checkedAt });
       return;
     }
 
-    const ok = result.success === monitor.expectedStatus ? 1 : 0;
     yield* sql`
       INSERT INTO checks (monitor_id, checked_at, ok, status_code, latency_ms, error)
-      VALUES (${monitor.id}, ${checkedAt}, ${ok}, ${result.success}, ${latency}, NULL)
+      VALUES (${monitor.id}, ${checkedAt}, 1, ${result.success}, ${latency}, NULL)
     `;
-    yield* recordAlertTransition({ monitorId: monitor.id, ok, checkedAt });
+    yield* recordAlertTransition({ monitorId: monitor.id, ok: 1, checkedAt });
   });
 
   const checkAll = Effect.fn("Status.checkAll")(function* () {

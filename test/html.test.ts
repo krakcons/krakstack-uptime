@@ -107,6 +107,20 @@ it("renders immediate custom uptime tooltips", () => {
   expect(page).toContain("offset / bounds.width * targets.length");
 });
 
+it("includes failed check duration in uptime tooltips", () => {
+  const now = Date.UTC(2026, 7, 25, 20, 0);
+  const hour = Math.floor(now / 3_600_000);
+  const markup = renderStatus(
+    snapshot({
+      monitors: [monitor()],
+      hours: [{ monitor_id: "api", bucket: hour, successful: 0, total: 65 }],
+    }),
+    now,
+  );
+
+  expect(markup).toContain("0.00% uptime · Failed checks: 1 hour 5 minutes");
+});
+
 it("renders accessible controls for all uptime ranges", () => {
   const markup = renderPage("Krakstack Uptime", renderStatus(snapshot()));
 

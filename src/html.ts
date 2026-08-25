@@ -20,6 +20,18 @@ const escapeHtml = (value: string | number): string =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
+const formatDuration = (minutes: number): string => {
+  const units = [
+    [Math.floor(minutes / (24 * 60)), "day"],
+    [Math.floor((minutes % (24 * 60)) / 60), "hour"],
+    [minutes % 60, "minute"],
+  ] as const;
+  return units
+    .filter(([value]) => value > 0)
+    .map(([value, unit]) => `${value} ${unit}${value === 1 ? "" : "s"}`)
+    .join(" ");
+};
+
 export const overallState = (snapshot: Snapshot): OverallState => {
   if (
     snapshot.monitors.some((monitor) => monitor.active && monitor.last_ok === 0)
@@ -58,7 +70,12 @@ const renderBars = (
             : "bad";
     const label =
       percent === null ? "No data" : `${percent.toFixed(2)}% uptime`;
-    const tooltip = `${formatTimestamp(timestamp, timeZone)}: ${label}`;
+    const failed = row ? row.total - row.successful : 0;
+    const failures =
+      failed > 0
+        ? ` · Failed check${failed === 1 ? "" : "s"}: ${formatDuration(failed)}`
+        : "";
+    const tooltip = `${formatTimestamp(timestamp, timeZone)}: ${label}${failures}`;
     bars.push(
       `<i class="uptime-bar ${tone}" role="img" aria-label="${escapeHtml(tooltip)}" data-tooltip="${escapeHtml(tooltip)}"></i>`,
     );

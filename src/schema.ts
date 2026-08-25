@@ -67,6 +67,11 @@ export const AlertStateRowSchema = Schema.Struct({
   ok: Schema.Literals([0, 1]),
 }).annotate({ identifier: "AlertStateRow" });
 
+export const MonitorAlertStateRowSchema = Schema.Struct({
+  monitor_id: Schema.String,
+  ok: Schema.Literals([0, 1]),
+}).annotate({ identifier: "MonitorAlertStateRow" });
+
 export const PendingAlertRowSchema = Schema.Struct({
   id: Schema.Int,
   monitor_id: Schema.String,
@@ -100,6 +105,7 @@ export class MonitorCheckError extends Schema.TaggedError<MonitorCheckError>()(
   {
     message: Schema.String,
     cause: Schema.Defect(),
+    statusCode: Schema.optional(Schema.Int),
   },
 ) {}
 
