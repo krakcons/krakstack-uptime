@@ -1,6 +1,10 @@
 {
   "siteName": "Krakstack Uptime",
   "domain": "status.krakconsultants.net",
+  "alerts": {
+    "from": "status@krakconsultants.net",
+    "emails": ["bhawkes@krakconsultants.com"]
+  },
   "monitors": [
     {
       "id": "krakstack-auth",
