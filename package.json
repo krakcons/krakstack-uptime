@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "alchemy dev",
+    "dev:internal": "STATUS_CONFIG_PATH=status.internal.json alchemy dev",
     "deploy": "alchemy deploy --stage prod",
+    "deploy:internal": "STATUS_CONFIG_PATH=status.internal.json alchemy deploy --stage prod",
     "destroy": "alchemy destroy --stage prod",
     "lint": "oxlint",
     "fmt": "oxfmt",

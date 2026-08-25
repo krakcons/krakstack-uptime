@@ -55,6 +55,22 @@ Each monitor requires:
 
 `timeZone` is optional and accepts an IANA time zone supported by `Intl`, such as `America/Toronto` or `Europe/Paris`. It controls timestamps in chart tooltips and alert emails; UTC is used by default.
 
+### Alternate Configurations
+
+`status.config.json` is the default configuration. Select another bundled configuration with `STATUS_CONFIG_PATH`:
+
+```sh
+STATUS_CONFIG_PATH=status.internal.json bun run dev
+```
+
+The included internal shortcut runs the same command:
+
+```sh
+bun run dev:internal
+```
+
+Use `bun run deploy:internal` when intentionally deploying `status.internal.json`. Both supported config files are validated at startup, and unsupported paths fail before deployment.
+
 ### Email Alerts
 
 To email once when a monitor enters an outage and again when it recovers, add an alert sender and recipient list:

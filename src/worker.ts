@@ -7,14 +7,24 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import statusConfig from "../status.config.json" with { type: "json" };
 import { makeAlertEmail, statusPageUrl } from "./alerts.ts";
+import {
+  ConfigPath,
+  DEFAULT_CONFIG_PATH,
+  StatusConfigPathSchema,
+  configForPath,
+  configs,
+} from "./config.ts";
 import { Database } from "./database.ts";
 import { renderPage, renderStatus } from "./html.ts";
-import { StatusConfigSchema } from "./schema.ts";
 import { HttpClientLive, makeStatus } from "./status.ts";
 
-const config = Schema.decodeUnknownSync(StatusConfigSchema)(statusConfig);
+const selectedConfigPath = globalThis.__ALCHEMY_RUNTIME__
+  ? DEFAULT_CONFIG_PATH
+  : Schema.decodeUnknownSync(StatusConfigPathSchema)(
+      process.env.STATUS_CONFIG_PATH ?? DEFAULT_CONFIG_PATH,
+    );
+const planConfig = configForPath(selectedConfigPath);
 
 const html = (body: string) =>
   HttpServerResponse.html(body).pipe(
@@ -30,27 +40,46 @@ const text = (message: string, status: number) =>
 const internalServerError = (cause: Cause.Cause<unknown>) =>
   Effect.logError(cause).pipe(Effect.as(text("Internal server error", 500)));
 
-const Email = config.alerts
-  ? Cloudflare.Email.SendEmail("StatusAlertEmail", {
-      allowedDestinationAddresses: [...config.alerts.emails],
-      allowedSenderAddresses: [config.alerts.from],
-    })
-  : undefined;
-const workerProps = config.domain
-  ? { main: import.meta.url, domain: config.domain }
-  : { main: import.meta.url };
+const emailProps: Cloudflare.Email.SendEmailProps = {};
+const allowedDestinationAddresses = [
+  ...new Set(
+    Object.values(configs).flatMap((config) => config.alerts?.emails ?? []),
+  ),
+];
+const allowedSenderAddresses = [
+  ...new Set(
+    Object.values(configs).flatMap((config) =>
+      config.alerts ? [config.alerts.from] : [],
+    ),
+  ),
+];
+if (allowedDestinationAddresses.length > 0) {
+  emailProps.allowedDestinationAddresses = allowedDestinationAddresses;
+}
+if (allowedSenderAddresses.length > 0) {
+  emailProps.allowedSenderAddresses = allowedSenderAddresses;
+}
+const Email = Cloudflare.Email.SendEmail("StatusAlertEmail", emailProps);
+const baseWorkerProps = {
+  main: import.meta.url,
+  env: { STATUS_CONFIG_PATH: selectedConfigPath },
+};
+const workerProps = planConfig.domain
+  ? { ...baseWorkerProps, domain: planConfig.domain }
+  : baseWorkerProps;
 
 export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
   "StatusWorker",
   workerProps,
   Effect.gen(function* () {
+    const config = configForPath(yield* ConfigPath);
     const d1 = yield* Cloudflare.D1.QueryDatabase(Database);
     const status = yield* makeStatus({ config }).pipe(
       Effect.provide(SQL.D1Layer(d1)),
       Effect.provide(HttpClientLive),
     );
     const alertConfig = config.alerts;
-    const email = Email ? yield* Cloudflare.Email.Send(Email) : undefined;
+    const email = alertConfig ? yield* Cloudflare.Email.Send(Email) : undefined;
     const router = yield* HttpRouter.make;
 
     const checkAllAndAlert = status.checkAll().pipe(
