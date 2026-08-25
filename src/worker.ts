@@ -1,5 +1,4 @@
 import { ServerSentEventGenerator } from "@starfederation/datastar-sdk/web";
-import type { EmailMessageBuilder, SendEmail } from "@cloudflare/workers-types";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as SQL from "alchemy/SQL/D1";
 import * as Cause from "effect/Cause";
@@ -31,23 +30,15 @@ const text = (message: string, status: number) =>
 const internalServerError = (cause: Cause.Cause<unknown>) =>
   Effect.logError(cause).pipe(Effect.as(text("Internal server error", 500)));
 
-const alertEmailBinding: Cloudflare.Email.SendEmail | undefined = config.alerts
-  ? {
-      kind: "Cloudflare.Email.SendEmail",
-      name: "StatusAlertEmail",
+const Email = config.alerts
+  ? Cloudflare.Email.SendEmail("StatusAlertEmail", {
       allowedDestinationAddresses: [...config.alerts.emails],
       allowedSenderAddresses: [config.alerts.from],
-    }
+    })
   : undefined;
-const baseWorkerProps = config.domain
+const workerProps = config.domain
   ? { main: import.meta.url, domain: config.domain }
   : { main: import.meta.url };
-const workerProps = alertEmailBinding
-  ? {
-      ...baseWorkerProps,
-      bindings: { StatusAlertEmail: alertEmailBinding },
-    }
-  : baseWorkerProps;
 
 export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
   "StatusWorker",
@@ -59,27 +50,12 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
       Effect.provide(HttpClientLive),
     );
     const alertConfig = config.alerts;
-    const workerEnvironment = yield* Cloudflare.WorkerEnvironment;
-    const email: SendEmail | undefined = alertConfig
-      ? workerEnvironment.StatusAlertEmail
-      : undefined;
-    const sendEmail = email
-      ? Effect.fn("Status.sendEmail")((message: EmailMessageBuilder) =>
-          Effect.tryPromise({
-            try: () => email.send(message),
-            catch: (error) =>
-              new Cloudflare.Email.SendEmailError({
-                message: String(error),
-                cause: error,
-              }),
-          }),
-        )
-      : undefined;
+    const email = Email ? yield* Cloudflare.Email.Send(Email) : undefined;
     const router = yield* HttpRouter.make;
 
     const checkAllAndAlert = status.checkAll().pipe(
       Effect.flatMap((alerts) =>
-        sendEmail && alertConfig
+        email && alertConfig
           ? Effect.forEach(
               alerts,
               (alert) => {
@@ -88,15 +64,17 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
                   siteName: config.siteName,
                   statusUrl: statusPageUrl(config),
                 });
-                return sendEmail({
-                  from: alertConfig.from,
-                  to: [...alertConfig.emails],
-                  ...message,
-                }).pipe(
-                  Effect.tap(() => status.markAlertSent({ id: alert.id })),
-                  Effect.tapError(Effect.logError),
-                  Effect.ignore,
-                );
+                return email
+                  .send({
+                    from: alertConfig.from,
+                    to: [...alertConfig.emails],
+                    ...message,
+                  })
+                  .pipe(
+                    Effect.tap(() => status.markAlertSent({ id: alert.id })),
+                    Effect.tapError(Effect.logError),
+                    Effect.ignore,
+                  );
               },
               { concurrency: 1, discard: true },
             )
@@ -115,7 +93,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
                   monitor.last_checked_at === null ||
                   monitor.last_checked_at < now - 90_000,
               )
-                ? checkAllAndAlert.pipe(Effect.andThen(status.loadSnapshot()))
+                ? status.checkAll().pipe(Effect.andThen(status.loadSnapshot()))
                 : Effect.succeed(snapshot),
             ),
           ),
@@ -168,6 +146,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
     };
   }).pipe(
     Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
+    Effect.provide(Cloudflare.Email.SendBinding),
     Effect.provide(Cloudflare.Workers.CronEventSourceLive),
   ),
 ) {}
