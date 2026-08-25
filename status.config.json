@@ -1,11 +1,147 @@
 {
   "siteName": "Krakstack Uptime",
+  "domain": "status.krakconsultants.net",
   "monitors": [
     {
-      "id": "website",
+      "id": "krakstack-auth",
+      "group": "KrakStack",
+      "name": "KrakStack Auth",
+      "url": "https://auth.krakstack.net",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "krakstack-site",
+      "group": "KrakStack",
+      "name": "KrakStack Site",
+      "url": "https://krakstack.net",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "krakstack-template",
+      "group": "KrakStack",
+      "name": "KrakStack Template",
+      "url": "https://template.krakstack.net",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "211",
       "group": "Apps",
-      "name": "Website",
-      "url": "https://example.com",
+      "name": "211",
+      "url": "https://app.211.ca",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "cords-widget",
+      "group": "Apps",
+      "name": "Cords Widget",
+      "url": "https://widget.cords.ai?q=food&api_key=test",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "kokobi",
+      "group": "Apps",
+      "name": "Kokobi",
+      "url": "https://kokobi.org",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "nuonn",
+      "group": "Apps",
+      "name": "Nuonn",
+      "url": "https://nuonn.com",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "recordscratch",
+      "group": "Apps",
+      "name": "Recordscratch",
+      "url": "https://recordscratch.app",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "umami",
+      "group": "Apps",
+      "name": "Umami",
+      "url": "https://analytics.krakconsultants.net",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "volunteering-connector",
+      "group": "Apps",
+      "name": "Volunteering Connector",
+      "url": "https://www.volunteeringconnector.com",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "companionlink",
+      "group": "WordPress",
+      "name": "CompanionLink",
+      "url": "https://companionlink.org",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "musee-imaginarium",
+      "group": "WordPress",
+      "name": "Musee Imaginarium",
+      "url": "https://museeimaginarium.com",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "myriam-dahoua-coaching",
+      "group": "WordPress",
+      "name": "Myriam Dahoua Coaching",
+      "url": "https://myriamdahouacoaching.com",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "puckapp",
+      "group": "WordPress",
+      "name": "Puckapp",
+      "url": "https://puckapp.ca",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "sage",
+      "group": "WordPress",
+      "name": "Sage",
+      "url": "https://sageproject.ca",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
+      "id": "terry-corbin",
+      "group": "WordPress",
+      "name": "Terry Corbin",
+      "url": "https://terrycorbin.com",
       "method": "GET",
       "expectedStatus": 200,
       "timeoutMs": 10000
