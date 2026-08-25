@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import { isTimeZone } from "./time.ts";
 
 export const EmailAddressSchema = Schema.String.check(
   Schema.isPattern(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, {
@@ -13,6 +14,12 @@ export const AlertConfigSchema = Schema.Struct({
     Schema.isMaxLength(50),
   ),
 }).annotate({ identifier: "AlertConfig" });
+
+export const TimeZoneSchema = Schema.String.check(
+  Schema.makeFilter((value) =>
+    isTimeZone(value) ? undefined : "Must be a valid IANA time zone",
+  ),
+).annotate({ identifier: "TimeZone" });
 
 export const MonitorMethodSchema = Schema.Literals(["GET", "HEAD"]).annotate({
   identifier: "MonitorMethod",
@@ -37,6 +44,7 @@ export const MonitorConfigSchema = Schema.Struct({
 export const StatusConfigSchema = Schema.Struct({
   siteName: Schema.NonEmptyString,
   domain: Schema.optional(Schema.NonEmptyString),
+  timeZone: Schema.optional(TimeZoneSchema),
   alerts: Schema.optional(AlertConfigSchema),
   monitors: Schema.Array(MonitorConfigSchema),
 }).annotate({ identifier: "StatusConfig" });

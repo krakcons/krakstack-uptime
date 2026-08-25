@@ -1,4 +1,5 @@
 import type { PendingAlertRow, StatusConfig } from "./schema.ts";
+import { formatTimestamp } from "./time.ts";
 
 export interface StatusAlert extends PendingAlertRow {
   readonly group: string;
@@ -15,15 +16,17 @@ export const makeAlertEmail = ({
   alert,
   siteName,
   statusUrl,
+  timeZone,
 }: {
   readonly alert: StatusAlert;
   readonly siteName: string;
   readonly statusUrl?: string;
+  readonly timeZone?: string;
 }) => {
   const outage = alert.ok === 0;
   const state = outage ? "OUTAGE" : "RECOVERED";
   const status = outage ? "experiencing an outage" : "operational again";
-  const checkedAt = new Date(alert.created_at).toISOString();
+  const checkedAt = formatTimestamp(alert.created_at, timeZone ?? "UTC");
   const lines = [
     `${alert.name} is ${status}.`,
     "",

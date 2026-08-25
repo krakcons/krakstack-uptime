@@ -36,6 +36,7 @@ it("formats an outage email", () => {
       alert: alert(),
       siteName: "Krakstack Uptime",
       statusUrl: "https://status.example.com",
+      timeZone: "America/Toronto",
     }),
   ).toEqual({
     subject: "[Krakstack Uptime] OUTAGE: API",
@@ -44,7 +45,7 @@ it("formats an outage email", () => {
       "",
       "Group: Apps",
       "Service: https://api.example.com/health",
-      "Checked: 2026-08-25T20:00:00.000Z",
+      "Checked: Aug 25, 2026, 04:00 PM EDT",
       "Status page: https://status.example.com",
     ].join("\n"),
   });

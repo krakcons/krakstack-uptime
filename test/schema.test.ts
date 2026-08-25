@@ -34,6 +34,18 @@ describe("StatusConfigSchema", () => {
     ).toBe("status.example.com");
   });
 
+  it("decodes an IANA time zone", () => {
+    expect(
+      decodeConfig({ ...config, timeZone: "America/Toronto" }).timeZone,
+    ).toBe("America/Toronto");
+  });
+
+  it("rejects an invalid time zone", () => {
+    expect(() =>
+      decodeConfig({ ...config, timeZone: "Mars/Olympus" }),
+    ).toThrow();
+  });
+
   it("decodes alert sender and recipient emails", () => {
     const decoded = decodeConfig({
       ...config,
