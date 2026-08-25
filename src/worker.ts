@@ -1,4 +1,5 @@
 import { ServerSentEventGenerator } from "@starfederation/datastar-sdk/web";
+import type { EmailMessageBuilder, SendEmail } from "@cloudflare/workers-types";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as SQL from "alchemy/SQL/D1";
 import * as Cause from "effect/Cause";
@@ -8,6 +9,7 @@ import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import statusConfig from "../status.config.json" with { type: "json" };
+import { makeAlertEmail, statusPageUrl } from "./alerts.ts";
 import { Database } from "./database.ts";
 import { renderPage, renderStatus } from "./html.ts";
 import { StatusConfigSchema } from "./schema.ts";
@@ -29,9 +31,23 @@ const text = (message: string, status: number) =>
 const internalServerError = (cause: Cause.Cause<unknown>) =>
   Effect.logError(cause).pipe(Effect.as(text("Internal server error", 500)));
 
-const workerProps = config.domain
+const alertEmailBinding: Cloudflare.Email.SendEmail | undefined = config.alerts
+  ? {
+      kind: "Cloudflare.Email.SendEmail",
+      name: "StatusAlertEmail",
+      allowedDestinationAddresses: [...config.alerts.emails],
+      allowedSenderAddresses: [config.alerts.from],
+    }
+  : undefined;
+const baseWorkerProps = config.domain
   ? { main: import.meta.url, domain: config.domain }
   : { main: import.meta.url };
+const workerProps = alertEmailBinding
+  ? {
+      ...baseWorkerProps,
+      bindings: { StatusAlertEmail: alertEmailBinding },
+    }
+  : baseWorkerProps;
 
 export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
   "StatusWorker",
@@ -42,7 +58,51 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
       Effect.provide(SQL.D1Layer(d1)),
       Effect.provide(HttpClientLive),
     );
+    const alertConfig = config.alerts;
+    const workerEnvironment = yield* Cloudflare.WorkerEnvironment;
+    const email: SendEmail | undefined = alertConfig
+      ? workerEnvironment.StatusAlertEmail
+      : undefined;
+    const sendEmail = email
+      ? Effect.fn("Status.sendEmail")((message: EmailMessageBuilder) =>
+          Effect.tryPromise({
+            try: () => email.send(message),
+            catch: (error) =>
+              new Cloudflare.Email.SendEmailError({
+                message: String(error),
+                cause: error,
+              }),
+          }),
+        )
+      : undefined;
     const router = yield* HttpRouter.make;
+
+    const checkAllAndAlert = status.checkAll().pipe(
+      Effect.flatMap((alerts) =>
+        sendEmail && alertConfig
+          ? Effect.forEach(
+              alerts,
+              (alert) => {
+                const message = makeAlertEmail({
+                  alert,
+                  siteName: config.siteName,
+                  statusUrl: statusPageUrl(config),
+                });
+                return sendEmail({
+                  from: alertConfig.from,
+                  to: [...alertConfig.emails],
+                  ...message,
+                }).pipe(
+                  Effect.tap(() => status.markAlertSent({ id: alert.id })),
+                  Effect.tapError(Effect.logError),
+                  Effect.ignore,
+                );
+              },
+              { concurrency: 1, discard: true },
+            )
+          : Effect.void,
+      ),
+    );
 
     const loadFreshSnapshot = status
       .loadSnapshot()
@@ -55,7 +115,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
                   monitor.last_checked_at === null ||
                   monitor.last_checked_at < now - 90_000,
               )
-                ? status.checkAll().pipe(Effect.andThen(status.loadSnapshot()))
+                ? checkAllAndAlert.pipe(Effect.andThen(status.loadSnapshot()))
                 : Effect.succeed(snapshot),
             ),
           ),
@@ -100,7 +160,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
     yield* router.add("*", "/*", text("Not found", 404));
 
     yield* Cloudflare.Workers.cron("* * * * *", () =>
-      status.checkAll().pipe(Effect.tapCause(Effect.logError), Effect.ignore),
+      checkAllAndAlert.pipe(Effect.tapCause(Effect.logError), Effect.ignore),
     );
 
     return {

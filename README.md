@@ -52,6 +52,21 @@ Each monitor requires:
 
 `src/schema.ts` contains the Effect schemas. Invalid configuration prevents the Worker from starting instead of silently deploying incorrect checks.
 
+### Email Alerts
+
+To email once when a monitor enters an outage and again when it recovers, add an alert sender and recipient list:
+
+```json
+{
+  "alerts": {
+    "from": "status@example.com",
+    "emails": ["ops@example.com"]
+  }
+}
+```
+
+The sender domain must be configured for Cloudflare Email, and every recipient must be verified in the Cloudflare account. Cloudflare limits a message to 50 recipients. Failed deliveries remain in a D1 outbox and are retried by later checks; successful transition alerts are not sent again.
+
 ## Local Development
 
 Prerequisites:
