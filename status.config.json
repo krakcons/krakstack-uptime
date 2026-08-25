@@ -1,6 +1,7 @@
 {
   "siteName": "Krakstack Uptime",
   "domain": "status.krakconsultants.net",
+  "timeZone": "America/Toronto",
   "alerts": {
     "from": "status@krakconsultants.net",
     "emails": ["bhawkes@krakconsultants.com"]
