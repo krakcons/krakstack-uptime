@@ -96,7 +96,10 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
                 });
                 return email
                   .send({
-                    from: alertConfig.from,
+                    from: {
+                      email: alertConfig.from,
+                      name: config.siteName,
+                    },
                     to: [...alertConfig.emails],
                     ...message,
                   })
