@@ -63,6 +63,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
                   alert,
                   siteName: config.siteName,
                   statusUrl: statusPageUrl(config),
+                  timeZone: config.timeZone,
                 });
                 return email
                   .send({
@@ -105,7 +106,12 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
       "/",
       loadFreshSnapshot.pipe(
         Effect.map((snapshot) =>
-          html(renderPage(config.siteName, renderStatus(snapshot))),
+          html(
+            renderPage(
+              config.siteName,
+              renderStatus(snapshot, undefined, config.timeZone),
+            ),
+          ),
         ),
         Effect.catchCause(internalServerError),
       ),
@@ -118,9 +124,12 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
         Effect.map((snapshot) =>
           HttpServerResponse.fromWeb(
             ServerSentEventGenerator.stream((stream) => {
-              stream.patchElements(renderStatus(snapshot), {
-                retryDuration: 15_000,
-              });
+              stream.patchElements(
+                renderStatus(snapshot, undefined, config.timeZone),
+                {
+                  retryDuration: 15_000,
+                },
+              );
             }),
           ),
         ),

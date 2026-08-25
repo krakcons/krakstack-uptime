@@ -24,6 +24,7 @@ Edit `status.config.json`:
 ```json
 {
   "siteName": "Krakstack Uptime",
+  "timeZone": "America/Toronto",
   "monitors": [
     {
       "id": "website",
@@ -51,6 +52,8 @@ Each monitor requires:
 | `timeoutMs`      | Request timeout from 1,000 to 30,000 milliseconds.                                      |
 
 `src/schema.ts` contains the Effect schemas. Invalid configuration prevents the Worker from starting instead of silently deploying incorrect checks.
+
+`timeZone` is optional and accepts an IANA time zone supported by `Intl`, such as `America/Toronto` or `Europe/Paris`. It controls timestamps in chart tooltips and alert emails; UTC is used by default.
 
 ### Email Alerts
 

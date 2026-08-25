@@ -1,4 +1,5 @@
 import type { BucketRow, MonitorRow, Snapshot } from "./schema.ts";
+import { formatTimestamp } from "./time.ts";
 
 interface OverallState {
   readonly label: string;
@@ -19,16 +20,6 @@ const escapeHtml = (value: string | number): string =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
-const formatTime = (timestamp: number): string =>
-  new Intl.DateTimeFormat("en", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "UTC",
-    timeZoneName: "short",
-  }).format(new Date(timestamp));
-
 export const overallState = (snapshot: Snapshot): OverallState => {
   if (
     snapshot.monitors.some((monitor) => monitor.active && monitor.last_ok === 0)
@@ -43,6 +34,7 @@ const renderBars = (
   rows: ReadonlyArray<BucketRow>,
   interval: number,
   now: number,
+  timeZone: string,
 ): string => {
   const byBucket = new Map(
     rows
@@ -67,7 +59,7 @@ const renderBars = (
     const label =
       percent === null ? "No data" : `${percent.toFixed(2)}% uptime`;
     bars.push(
-      `<i class="uptime-bar ${tone}" title="${escapeHtml(formatTime(timestamp))}: ${label}"></i>`,
+      `<i class="uptime-bar ${tone}" title="${escapeHtml(formatTimestamp(timestamp, timeZone))}: ${label}"></i>`,
     );
   }
   return bars.join("");
@@ -96,8 +88,9 @@ const renderRange = (
   range: "minutes" | "hours" | "days",
   interval: number,
   now: number,
+  timeZone: string,
 ): string => `<div class="range-view" data-range-view="${range}">
-    <div class="uptime-bars" aria-label="90-${range} uptime for ${escapeHtml(monitor.name)}">${renderBars(monitor, rows, interval, now)}</div>
+    <div class="uptime-bars" aria-label="90-${range} uptime for ${escapeHtml(monitor.name)}">${renderBars(monitor, rows, interval, now, timeZone)}</div>
     <div class="range"><span>90 ${range} ago</span><span>${monitorUptime(monitor.id, rows)}</span><span>Now</span></div>
   </div>`;
 
@@ -105,6 +98,7 @@ const renderMonitor = (
   monitor: MonitorRow,
   snapshot: Snapshot,
   now: number,
+  timeZone: string,
 ): string => {
   const tone =
     monitor.last_ok === null
@@ -123,9 +117,9 @@ const renderMonitor = (
       <div class="component-name"><strong>${escapeHtml(monitor.name)}</strong><a href="${escapeHtml(monitor.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(monitor.url)}</a></div>
       <span class="component-status ${tone}"><i></i>${label}</span>
     </div>
-    ${renderRange(monitor, snapshot.minutes, "minutes", MINUTE, now)}
-    ${renderRange(monitor, snapshot.hours, "hours", HOUR, now)}
-    ${renderRange(monitor, snapshot.days, "days", DAY, now)}
+    ${renderRange(monitor, snapshot.minutes, "minutes", MINUTE, now, timeZone)}
+    ${renderRange(monitor, snapshot.hours, "hours", HOUR, now, timeZone)}
+    ${renderRange(monitor, snapshot.days, "days", DAY, now, timeZone)}
   </article>`;
 };
 
@@ -146,6 +140,7 @@ const renderGroup = (
   monitors: ReadonlyArray<MonitorRow>,
   snapshot: Snapshot,
   now: number,
+  timeZone: string,
 ): string => {
   const operational = monitors.filter(
     (monitor) => monitor.last_ok === 1,
@@ -157,11 +152,15 @@ const renderGroup = (
       ${renderGroupAggregate(monitors, snapshot.hours, "hours")}
       ${renderGroupAggregate(monitors, snapshot.days, "days")}
     </div>
-    ${monitors.map((monitor) => renderMonitor(monitor, snapshot, now)).join("")}
+    ${monitors.map((monitor) => renderMonitor(monitor, snapshot, now, timeZone)).join("")}
   </section>`;
 };
 
-export const renderStatus = (snapshot: Snapshot, now = Date.now()): string => {
+export const renderStatus = (
+  snapshot: Snapshot,
+  now = Date.now(),
+  timeZone = "UTC",
+): string => {
   const state = overallState(snapshot);
   const latestCheckedAt = Math.max(
     0,
@@ -194,7 +193,7 @@ export const renderStatus = (snapshot: Snapshot, now = Date.now()): string => {
           ? `<div class="empty-state">No monitors have been configured yet.</div>`
           : [...groups]
               .map(([group, monitors]) =>
-                renderGroup(group, monitors, snapshot, now),
+                renderGroup(group, monitors, snapshot, now, timeZone),
               )
               .join("")
       }
