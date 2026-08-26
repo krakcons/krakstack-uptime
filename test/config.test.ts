@@ -19,6 +19,11 @@ describe("status configuration selection", () => {
     const config = configForPath(INTERNAL_CONFIG_PATH);
 
     expect(config.domain).toBe("status.krakconsultants.net");
+    expect(config.siteName).toEqual({
+      label: "Krak",
+      en: "Status",
+      fr: "Statut",
+    });
     expect(config.timeZone).toBe("America/Toronto");
     expect(config.monitors.length).toBeGreaterThan(1);
   });

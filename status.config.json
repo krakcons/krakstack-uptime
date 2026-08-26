@@ -1,5 +1,9 @@
 {
-  "siteName": "Krakstack Uptime",
+  "siteName": {
+    "label": "KrakStack",
+    "en": "Uptime",
+    "fr": "Disponibilité"
+  },
   "timeZone": "UTC",
   "monitors": [
     {

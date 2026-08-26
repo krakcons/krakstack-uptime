@@ -64,7 +64,11 @@ it("formats a recovery email", () => {
 it("derives the status URL from the configured domain", () => {
   expect(
     statusPageUrl({
-      siteName: "Krakstack Uptime",
+      siteName: {
+        label: "KrakStack",
+        en: "Uptime",
+        fr: "Disponibilité",
+      },
       domain: "status.example.com",
       monitors: [],
     }),

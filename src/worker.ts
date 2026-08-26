@@ -90,7 +90,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
               (alert) => {
                 const message = makeAlertEmail({
                   alert,
-                  siteName: config.siteName,
+                  siteName: `${config.siteName.label} ${config.siteName.en}`,
                   statusUrl: statusPageUrl(config),
                   timeZone: config.timeZone,
                 });
@@ -98,7 +98,7 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
                   .send({
                     from: {
                       email: alertConfig.from,
-                      name: config.siteName,
+                      name: `${config.siteName.label} ${config.siteName.en}`,
                     },
                     to: [...alertConfig.emails],
                     ...message,

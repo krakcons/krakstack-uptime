@@ -1,5 +1,9 @@
 {
-  "siteName": "Krakstack Uptime",
+  "siteName": {
+    "label": "Krak",
+    "en": "Status",
+    "fr": "Statut"
+  },
   "domain": "status.krakconsultants.net",
   "timeZone": "America/Toronto",
   "alerts": {

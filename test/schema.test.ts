@@ -5,7 +5,7 @@ import { StatusConfigSchema } from "../src/schema.ts";
 const decodeConfig = Schema.decodeUnknownSync(StatusConfigSchema);
 
 const config = {
-  siteName: "Krakstack Uptime",
+  siteName: { label: "KrakStack", en: "Uptime", fr: "Disponibilité" },
   monitors: [
     {
       id: "cords-widget",
@@ -32,6 +32,17 @@ describe("StatusConfigSchema", () => {
     expect(
       decodeConfig({ ...config, domain: "status.example.com" }).domain,
     ).toBe("status.example.com");
+  });
+
+  it("requires English and French site names", () => {
+    expect(decodeConfig(config).siteName).toEqual({
+      label: "KrakStack",
+      en: "Uptime",
+      fr: "Disponibilité",
+    });
+    expect(() =>
+      decodeConfig({ ...config, siteName: { label: "Krak", en: "Status" } }),
+    ).toThrow();
   });
 
   it("decodes an IANA time zone", () => {

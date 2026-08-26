@@ -7,8 +7,12 @@ export const isTimeZone = (value: string): boolean => {
   }
 };
 
-export const formatTimestamp = (timestamp: number, timeZone: string): string =>
-  new Intl.DateTimeFormat("en", {
+export const formatTimestamp = (
+  timestamp: number,
+  timeZone: string,
+  locale = "en",
+): string =>
+  new Intl.DateTimeFormat(locale, {
     year: "numeric",
     month: "short",
     day: "numeric",

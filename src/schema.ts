@@ -41,8 +41,16 @@ export const MonitorConfigSchema = Schema.Struct({
   ),
 }).annotate({ identifier: "MonitorConfig" });
 
+export const LocalizedSiteNameSchema = Schema.Struct({
+  label: Schema.NonEmptyString,
+  en: Schema.NonEmptyString,
+  fr: Schema.NonEmptyString,
+}).annotate({ identifier: "LocalizedSiteName" });
+
+export type LocalizedSiteName = typeof LocalizedSiteNameSchema.Type;
+
 export const StatusConfigSchema = Schema.Struct({
-  siteName: Schema.NonEmptyString,
+  siteName: LocalizedSiteNameSchema,
   domain: Schema.optional(Schema.NonEmptyString),
   timeZone: Schema.optional(TimeZoneSchema),
   alerts: Schema.optional(AlertConfigSchema),

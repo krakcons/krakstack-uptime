@@ -2,6 +2,12 @@ import { describe, expect, it } from "@effect/vitest";
 import { overallState, renderPage, renderStatus } from "../src/html.ts";
 import type { MonitorRow, Snapshot } from "../src/schema.ts";
 
+const siteName = {
+  label: "Krak",
+  en: "Status",
+  fr: "Statut",
+};
+
 const snapshot = (overrides: Partial<Snapshot> = {}): Snapshot => ({
   monitors: [],
   minutes: [],
@@ -114,7 +120,7 @@ it("renders immediate custom uptime tooltips", () => {
     now,
     "America/Toronto",
   );
-  const page = renderPage("Krakstack Uptime", statusMarkup);
+  const page = renderPage(siteName, statusMarkup);
 
   expect(statusMarkup).toContain(
     'data-tooltip="Aug 25, 2026, 04:00 PM EDT: 100.00% uptime"',
@@ -142,7 +148,7 @@ it("includes failed check duration in uptime tooltips", () => {
 });
 
 it("renders accessible controls for all uptime ranges", () => {
-  const markup = renderPage("Krakstack Uptime", renderStatus(snapshot()));
+  const markup = renderPage(siteName, renderStatus(snapshot()));
 
   expect(markup).toContain('data-range-button="minutes"');
   expect(markup).toContain('data-range-button="hours"');
@@ -153,6 +159,28 @@ it("renders accessible controls for all uptime ranges", () => {
   expect(markup).not.toContain("data-next-check");
   expect(markup).toContain("new MutationObserver(applyUptimeRange)");
   expect(markup).not.toContain("new MutationObserver(refreshControls)");
+});
+
+it("renders a persistent English and French language toggle", () => {
+  const markup = renderPage(siteName, renderStatus(snapshot()));
+
+  expect(markup).toContain('data-language-button="en"');
+  expect(markup).toContain('data-language-button="fr"');
+  expect(markup).toContain('class="brand" href="/"');
+  expect(markup).not.toContain("<strong>KrakStack</strong>");
+  expect(markup).toContain("<strong>Krak</strong>");
+  expect(markup).toContain('<small data-copy="en">Status</small>');
+  expect(markup).toContain("Krak Status");
+  expect(markup).toContain("Krak Statut");
+  expect(markup).toContain("<title>Krak | Status</title>");
+  expect(markup).toContain('data-site-name-fr="Krak | Statut"');
+  expect(markup).toContain("document.body.dataset.siteNameFr");
+  expect(markup).toContain('data-copy="en"');
+  expect(markup).toContain('data-copy="fr" lang="fr"');
+  expect(markup).toContain("Tous les systèmes sont opérationnels");
+  expect(markup).toContain("Disponibilité des systèmes");
+  expect(markup).toContain('localStorage.getItem("status-language")');
+  expect(markup).toContain('localStorage.setItem("status-language", language)');
 });
 
 it("groups monitors and calculates a weighted group aggregate", () => {
@@ -176,5 +204,5 @@ it("groups monitors and calculates a weighted group aggregate", () => {
   expect(markup).toContain("1/2 operational");
   expect(markup).toContain("75.00% uptime");
   expect(markup).toContain("90-day aggregate");
-  expect(markup.match(/<section class="service-group"/g)).toHaveLength(1);
+  expect(markup.match(/<section class="service-group"/g)).toHaveLength(2);
 });
