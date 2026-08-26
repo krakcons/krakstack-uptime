@@ -134,7 +134,7 @@ Edit `status.config.json` and deploy again whenever monitors change. Reusing a m
 bun run fmt:check
 bun run lint
 bun run typecheck
-bun test
+bun run test
 ```
 
 Format files with:
@@ -168,3 +168,15 @@ bun run destroy
 ```
 
 Destroying the stack deletes its D1 database and uptime history.
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for local setup, testing, and pull request guidance.
+
+## Security
+
+Report security vulnerabilities privately according to [SECURITY.md](SECURITY.md).
+
+## License
+
+Krakstack Uptime is available under the [MIT License](LICENSE).

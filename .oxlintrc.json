@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc", "eslint", "react"],
+  "plugins": ["typescript", "unicorn", "oxc", "eslint"],
   "ignorePatterns": [
     ".agent/**",
     ".agents/**",

@@ -1,0 +1,35 @@
+name: Bug report
+description: Report reproducible incorrect behavior
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Before reporting a security issue, read SECURITY.md and use private vulnerability reporting.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest configuration and steps that reproduce the problem. Remove secrets and private endpoints.
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Environment
+      description: Include the Bun version and whether this occurred locally or on Cloudflare.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste relevant logs after removing credentials and sensitive data.
+      render: text

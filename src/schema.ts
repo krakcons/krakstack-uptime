@@ -118,7 +118,6 @@ export class MonitorCheckError extends Schema.TaggedError<MonitorCheckError>()(
 ) {}
 
 export type BucketRow = typeof BucketRowSchema.Type;
-export type AlertConfig = typeof AlertConfigSchema.Type;
 export type PendingAlertRow = typeof PendingAlertRowSchema.Type;
 export type MonitorConfig = typeof MonitorConfigSchema.Type;
 export type MonitorRow = typeof MonitorRowSchema.Type;
