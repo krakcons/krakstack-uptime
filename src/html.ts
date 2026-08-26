@@ -33,10 +33,18 @@ const formatDuration = (minutes: number): string => {
 };
 
 export const overallState = (snapshot: Snapshot): OverallState => {
+  const activeMonitors = snapshot.monitors.filter((monitor) => monitor.active);
   if (
-    snapshot.monitors.some((monitor) => monitor.active && monitor.last_ok === 0)
+    activeMonitors.length > 0 &&
+    activeMonitors.every((monitor) => monitor.last_ok === 0)
   ) {
+    return { label: "All Systems Are Experiencing Issues", tone: "major" };
+  }
+  if (activeMonitors.some((monitor) => monitor.last_ok === 0)) {
     return { label: "Some Systems Are Experiencing Issues", tone: "partial" };
+  }
+  if (activeMonitors.some((monitor) => monitor.last_ok === null)) {
+    return { label: "Some Systems Are Awaiting Checks", tone: "unknown" };
   }
   return { label: "All Systems Operational", tone: "operational" };
 };
@@ -150,7 +158,8 @@ const renderGroupAggregate = (
     new Set(monitors.map((monitor) => monitor.id)),
     rows,
   );
-  return `<div class="group-aggregate range-view" data-range-view="${range}"><strong>${uptime}</strong><span>Aggregate over 90 ${range}</span></div>`;
+  const unit = range.slice(0, -1);
+  return `<div class="group-aggregate range-view" data-range-view="${range}"><strong>${uptime}</strong><span>90-${unit} aggregate</span></div>`;
 };
 
 const renderGroup = (
@@ -165,7 +174,7 @@ const renderGroup = (
   ).length;
   return `<section class="service-group" aria-labelledby="group-${escapeHtml(group)}">
     <div class="group-heading">
-      <div><p class="eyebrow">Group</p><h3 id="group-${escapeHtml(group)}">${escapeHtml(group)}</h3><span>${operational} of ${monitors.length} operational</span></div>
+      <div class="group-title"><h3 id="group-${escapeHtml(group)}">${escapeHtml(group)}</h3><span>${operational}/${monitors.length} operational</span></div>
       ${renderGroupAggregate(monitors, snapshot.minutes, "minutes")}
       ${renderGroupAggregate(monitors, snapshot.hours, "hours")}
       ${renderGroupAggregate(monitors, snapshot.days, "days")}
@@ -180,10 +189,6 @@ export const renderStatus = (
   timeZone = "UTC",
 ): string => {
   const state = overallState(snapshot);
-  const latestCheckedAt = Math.max(
-    0,
-    ...snapshot.monitors.map((monitor) => monitor.last_checked_at ?? 0),
-  );
   const groups = new Map<string, Array<MonitorRow>>();
   for (const monitor of snapshot.monitors) {
     const group = groups.get(monitor.group) ?? [];
@@ -204,7 +209,6 @@ export const renderStatus = (
           <button type="button" data-range-button="hours" aria-pressed="false">Hours</button>
           <button type="button" data-range-button="days" aria-pressed="true">Days</button>
         </div>
-        <span class="next-check" data-next-check data-last-check="${latestCheckedAt}">Next check pending</span>
       </div></div>
       ${
         snapshot.monitors.length === 0
@@ -249,17 +253,6 @@ export const renderPage = (
       for (const button of content.querySelectorAll("[data-range-button]")) {
         button.setAttribute("aria-pressed", String(button.dataset.rangeButton === selectedUptimeRange));
       }
-    };
-    const updateNextCheck = () => {
-      const countdown = document.querySelector("[data-next-check]");
-      if (!countdown) return;
-      const lastCheck = Number(countdown.dataset.lastCheck);
-      if (!lastCheck) {
-        countdown.textContent = "Next check pending";
-        return;
-      }
-      const seconds = Math.max(0, Math.ceil((lastCheck + 60000 - Date.now()) / 1000));
-      countdown.textContent = seconds > 0 ? "Next check in " + seconds + "s" : "Check due";
     };
     document.addEventListener("click", (event) => {
       const button = event.target instanceof Element ? event.target.closest("[data-range-button]") : null;
@@ -308,18 +301,14 @@ export const renderPage = (
       positionUptimeTooltip(target);
     });
     window.addEventListener("resize", () => positionUptimeTooltip(activeTooltipTarget));
+    window.addEventListener("scroll", hideUptimeTooltip, { passive: true });
     document.addEventListener("pointerleave", hideUptimeTooltip);
     new MutationObserver(applyUptimeRange).observe(document.documentElement, { childList: true, subtree: true });
-    document.addEventListener("DOMContentLoaded", () => {
-      applyUptimeRange();
-      updateNextCheck();
-    });
-    setInterval(updateNextCheck, 1000);
+    document.addEventListener("DOMContentLoaded", applyUptimeRange);
   </script>
   <style>${styles}</style>
 </head>
 <body data-init="@get('/stream', {retry: 'always', retryInterval: 15000, openWhenHidden: true})">
-  <header><a href="/" class="brand"><span class="brand-mark" aria-hidden="true">${uptimeIcon}</span>${escapeHtml(siteName)}</a></header>
   ${content}
   <footer><span>${escapeHtml(siteName)}</span><a href="https://github.com/krakcons/krakstack-uptime/" rel="noreferrer">Powered by krakcons/krakstack-uptime</a></footer>
   <div class="uptime-tooltip" role="tooltip" data-uptime-tooltip hidden></div>
@@ -380,49 +369,54 @@ body {
   margin: 0;
   background: transparent;
 }
-header, footer, #status-content {
+footer, #status-content {
   width: min(58rem, calc(100% - clamp(2rem, 8vw, 5rem)));
   margin-inline: auto;
 }
-header { display: flex; align-items: center; height: 5.5rem; }
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: var(--foreground);
-  font-size: 0.875rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-.brand:focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; border-radius: var(--radius); }
-.brand-mark {
-  width: 2rem;
-  height: 2rem;
-  display: grid;
-  place-items: center;
-  color: var(--primary-foreground);
-  background: var(--primary);
-  border-radius: calc(var(--radius) * 0.85);
-  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.08);
-}
-.brand-mark svg { width: 1.25rem; height: 1.25rem; }
 .overall {
   padding: clamp(3rem, 8vw, 6rem) clamp(1rem, 6vw, 4rem) clamp(3.5rem, 8vw, 5.5rem);
   text-align: center;
 }
 .status-icon {
+  --status-color: var(--operational);
   width: 5rem;
   height: 5rem;
+  position: relative;
   display: grid;
   place-items: center;
   margin: 0 auto 1.75rem;
-  color: var(--primary-foreground);
-  background: var(--primary);
+  color: white;
+  background: var(--status-color);
   border-radius: calc(var(--radius) * 1.4);
-  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.08);
+  box-shadow: 0 1px 2px hsl(0 0% 0% / 0.08), 0 0 2rem color-mix(in oklch, var(--status-color) 18%, transparent);
 }
-.status-icon svg { width: 2.75rem; height: 2.75rem; }
-.overall.partial .status-icon { color: white; background: var(--outage); }
+.status-icon::after {
+  position: absolute;
+  inset: -1px;
+  border: 2px solid var(--status-color);
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+  animation: status-pulse 2.4s ease-out infinite;
+}
+.status-icon svg { width: 2.75rem; height: 2.75rem; animation: status-beat 2.4s ease-in-out infinite; }
+.overall.partial .status-icon,
+.overall.unknown .status-icon { --status-color: var(--warning); color: oklch(0.2 0 0); }
+.overall.major .status-icon { --status-color: var(--outage); color: white; }
+@keyframes status-pulse {
+  0% { opacity: 0.65; transform: scale(1); }
+  65%, 100% { opacity: 0; transform: scale(1.28); }
+}
+@keyframes status-beat {
+  0%, 35%, 100% { transform: scale(1); }
+  42% { transform: scale(1.08); }
+  50% { transform: scale(0.98); }
+  58% { transform: scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-icon::after,
+  .status-icon svg { animation: none; }
+}
 .eyebrow {
   margin: 0 0 0.75rem;
   color: var(--muted-foreground);
@@ -457,12 +451,11 @@ header { display: flex; align-items: center; height: 5.5rem; }
 .range-controls button { padding: 0.45rem 0.65rem; color: var(--muted-foreground); background: transparent; border: 0; border-radius: calc(var(--radius) * 0.7); font: inherit; font-size: 0.6875rem; cursor: pointer; }
 .range-controls button[aria-pressed="true"] { color: var(--card-foreground); background: var(--card); box-shadow: 0 1px 2px hsl(0 0% 0% / 0.08); }
 .range-controls button:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; }
-.next-check { color: var(--muted-foreground); font-size: 0.625rem; font-variant-numeric: tabular-nums; }
 .service-group { margin-top: 2rem; }
 .group-heading { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding-inline: 0.25rem; }
-.group-heading .eyebrow { margin-bottom: 0.25rem; }
-.group-heading h3 { display: inline; margin: 0; font-size: 1rem; font-weight: 600; }
-.group-heading h3 + span { margin-left: 0.6rem; color: var(--muted-foreground); font-size: 0.6875rem; }
+.group-title { min-width: 0; }
+.group-title h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.group-title span { display: block; margin-top: 0.2rem; color: var(--muted-foreground); font-size: 0.6875rem; }
 .group-aggregate { text-align: right; }
 .group-aggregate strong, .group-aggregate span { display: block; }
 .group-aggregate strong { font-size: 0.875rem; font-weight: 600; }
@@ -516,17 +509,32 @@ footer a { color: inherit; text-decoration: none; }
 footer a:hover { color: var(--foreground); }
 footer a:focus-visible { outline: 3px solid var(--ring); outline-offset: 3px; border-radius: 2px; }
 @media (max-width: 700px) {
-  header { height: 4.5rem; }
   .overall { padding-inline: 0; }
-  .section-heading { align-items: start; gap: 1rem; }
-  .range-controls { flex-wrap: wrap; justify-content: end; }
-  .range-controls button { padding-inline: 0.5rem; }
-  .group-heading { align-items: start; }
+  .section-heading { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; justify-content: stretch; gap: 1rem; }
+  .status-tools { width: 100%; justify-items: stretch; }
+  .range-controls { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+  .range-controls button { min-height: 2.25rem; padding: 0.3rem 0.5rem; }
+  .group-heading { display: grid; align-items: start; gap: 0.75rem; }
+  .group-aggregate { text-align: left; }
   .uptime-bars { height: 1.5rem; gap: 1px; grid-template-columns: repeat(60, 1fr); }
   .uptime-bar:nth-child(-n + 30) { display: none; }
-  .component-name a { max-width: 13rem; }
   .range span:first-child { font-size: 0; }
-  .range span:first-child::after { content: "60 days ago"; font-size: 0.625rem; }
-  footer { display: grid; }
+  [data-range-view="minutes"] .range span:first-child::after { content: "60 minutes ago"; font-size: 0.625rem; }
+  [data-range-view="hours"] .range span:first-child::after { content: "60 hours ago"; font-size: 0.625rem; }
+  [data-range-view="days"] .range span:first-child::after { content: "60 days ago"; font-size: 0.625rem; }
+  footer { display: grid; justify-items: start; }
+  footer a { overflow-wrap: anywhere; }
+}
+@media (max-width: 440px) {
+  footer, #status-content { width: calc(100% - 1.25rem); }
+  .overall { padding-block: 2.5rem 3rem; }
+  .status-icon { width: 4.25rem; height: 4.25rem; margin-bottom: 1.35rem; }
+  .status-icon svg { width: 2.35rem; height: 2.35rem; }
+  .overall h1 { font-size: clamp(2.25rem, 12vw, 3rem); }
+  .component, .empty-state { padding: 1rem; }
+  .component-line { display: grid; gap: 0.75rem; }
+  .component-name a { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .range { grid-template-columns: 1fr auto 1fr; }
+  .range span:nth-child(2) { padding-inline: 0.35rem; text-align: center; }
 }
 `;

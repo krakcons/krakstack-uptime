@@ -33,10 +33,29 @@ describe("overallState", () => {
     });
   });
 
-  it("reports issues when an automatic check fails", () => {
+  it("reports a major issue when every active check fails", () => {
     expect(
       overallState(snapshot({ monitors: [monitor({ last_ok: 0 })] })).tone,
+    ).toBe("major");
+  });
+
+  it("reports a partial issue when only some active checks fail", () => {
+    expect(
+      overallState(
+        snapshot({
+          monitors: [
+            monitor({ id: "api", last_ok: 0 }),
+            monitor({ id: "site", last_ok: 1 }),
+          ],
+        }),
+      ).tone,
     ).toBe("partial");
+  });
+
+  it("reports an unknown state while an active check is pending", () => {
+    expect(
+      overallState(snapshot({ monitors: [monitor({ last_ok: null })] })).tone,
+    ).toBe("unknown");
   });
 });
 
@@ -105,6 +124,7 @@ it("renders immediate custom uptime tooltips", () => {
   expect(page).toContain('document.addEventListener("pointermove"');
   expect(page).toContain('closest(".uptime-bars")');
   expect(page).toContain("offset / bounds.width * targets.length");
+  expect(page).toContain('window.addEventListener("scroll", hideUptimeTooltip');
 });
 
 it("includes failed check duration in uptime tooltips", () => {
@@ -129,10 +149,8 @@ it("renders accessible controls for all uptime ranges", () => {
   expect(markup).toContain('data-range-button="days"');
   expect(markup).toContain('aria-label="Uptime range"');
   expect(markup).toContain('localStorage.getItem("uptime-range")');
-  expect(markup).toContain("Next check pending");
-  expect(markup).toContain('data-last-check="0"');
-  expect(markup).toContain("lastCheck + 60000 - Date.now()");
-  expect(markup).toContain("setInterval(updateNextCheck, 1000)");
+  expect(markup).not.toContain("Next check");
+  expect(markup).not.toContain("data-next-check");
   expect(markup).toContain("new MutationObserver(applyUptimeRange)");
   expect(markup).not.toContain("new MutationObserver(refreshControls)");
 });
@@ -155,7 +173,8 @@ it("groups monitors and calculates a weighted group aggregate", () => {
   );
 
   expect(markup).toContain(">Apps</h3>");
-  expect(markup).toContain("1 of 2 operational");
+  expect(markup).toContain("1/2 operational");
   expect(markup).toContain("75.00% uptime");
+  expect(markup).toContain("90-day aggregate");
   expect(markup.match(/<section class="service-group"/g)).toHaveLength(1);
 });
