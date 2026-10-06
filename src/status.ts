@@ -85,18 +85,16 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
         LIMIT 1
       `.pipe(Effect.flatMap(decodeAlertStateRows));
       const previous = states[0]?.ok;
-      const recent = yield* sql`
-        SELECT c.ok
-        FROM checks c
-        INNER JOIN (
-          SELECT MAX(id) AS id
-          FROM checks
-          WHERE monitor_id = ${monitorId}
-          GROUP BY CAST(checked_at / ${MINUTE} AS INTEGER)
-          ORDER BY id DESC
-          LIMIT 2
-        ) latest ON latest.id = c.id
-        ORDER BY c.id DESC
+      // Recovery is immediate; only failures need the last two distinct minutes.
+      const recent =
+        ok === 1
+          ? []
+          : yield* sql`
+        SELECT ok
+        FROM monitor_recent_minutes
+        WHERE monitor_id = ${monitorId}
+        ORDER BY latest_check_id DESC
+        LIMIT 2
       `.pipe(Effect.flatMap(decodeAlertStateRows));
       const confirmed = nextConfirmedStatus(
         previous,
@@ -123,13 +121,8 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
 
   const loadSnapshot = Effect.fn("Status.loadSnapshot")(function* () {
     const latest = yield* sql`
-      SELECT c.monitor_id, c.ok, c.checked_at, c.latency_ms
-      FROM checks c
-      INNER JOIN (
-        SELECT monitor_id, MAX(id) AS id
-        FROM checks
-        GROUP BY monitor_id
-      ) recent ON recent.id = c.id
+      SELECT monitor_id, ok, checked_at, latency_ms
+      FROM monitor_latest_check
     `.pipe(Effect.flatMap(decodeLatestChecks));
     const latestByMonitor = new Map(
       latest.map((check) => [check.monitor_id, check]),
@@ -161,25 +154,19 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     );
     const now = yield* Clock.currentTimeMillis;
     const minutes = yield* sql`
-      SELECT monitor_id, CAST(checked_at / ${MINUTE} AS INTEGER) AS bucket,
-        SUM(ok) AS successful, COUNT(*) AS total
-      FROM checks
-      WHERE checked_at >= ${(Math.floor(now / MINUTE) - 89) * MINUTE}
-      GROUP BY monitor_id, bucket
+      SELECT monitor_id, bucket, successful, total
+      FROM check_buckets
+      WHERE interval_ms = ${MINUTE} AND bucket >= ${Math.floor(now / MINUTE) - 89}
     `.pipe(Effect.flatMap(decodeBucketRows));
     const hours = yield* sql`
-      SELECT monitor_id, CAST(checked_at / ${HOUR} AS INTEGER) AS bucket,
-        SUM(ok) AS successful, COUNT(*) AS total
-      FROM checks
-      WHERE checked_at >= ${(Math.floor(now / HOUR) - 89) * HOUR}
-      GROUP BY monitor_id, bucket
+      SELECT monitor_id, bucket, successful, total
+      FROM check_buckets
+      WHERE interval_ms = ${HOUR} AND bucket >= ${Math.floor(now / HOUR) - 89}
     `.pipe(Effect.flatMap(decodeBucketRows));
     const days = yield* sql`
-      SELECT monitor_id, CAST(checked_at / ${DAY} AS INTEGER) AS bucket,
-        SUM(ok) AS successful, COUNT(*) AS total
-      FROM checks
-      WHERE checked_at >= ${(Math.floor(now / DAY) - 89) * DAY}
-      GROUP BY monitor_id, bucket
+      SELECT monitor_id, bucket, successful, total
+      FROM check_buckets
+      WHERE interval_ms = ${DAY} AND bucket >= ${Math.floor(now / DAY) - 89}
     `.pipe(Effect.flatMap(decodeBucketRows));
     return { monitors, minutes, hours, days } satisfies Snapshot;
   });
@@ -220,20 +207,22 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
       Duration.toMillis(Duration.nanos(finished - started)),
     );
 
-    if (result._tag === "Failure") {
-      yield* sql`
-        INSERT INTO checks (monitor_id, checked_at, ok, status_code, latency_ms, error)
-        VALUES (${monitor.id}, ${checkedAt}, 0, ${result.failure.statusCode ?? null}, ${latency}, ${result.failure.message})
-      `;
-      yield* recordAlertTransition({ monitorId: monitor.id, ok: 0, checkedAt });
-      return;
-    }
-
+    const ok = result._tag === "Success" ? 1 : 0;
+    const statusCode =
+      result._tag === "Success"
+        ? result.success
+        : (result.failure.statusCode ?? null);
+    const error = result._tag === "Success" ? null : result.failure.message;
+    // Replacing the latest row fires the migration's atomic persistence trigger.
+    // Its per-monitor sequence preserves check order even within the same minute.
     yield* sql`
-      INSERT INTO checks (monitor_id, checked_at, ok, status_code, latency_ms, error)
-      VALUES (${monitor.id}, ${checkedAt}, 1, ${result.success}, ${latency}, NULL)
+      INSERT OR REPLACE INTO monitor_latest_check
+        (monitor_id, latest_check_id, checked_at, ok, status_code, latency_ms, error)
+      VALUES (${monitor.id}, COALESCE((
+        SELECT latest_check_id + 1 FROM monitor_latest_check WHERE monitor_id = ${monitor.id}
+      ), 1), ${checkedAt}, ${ok}, ${statusCode}, ${latency}, ${error})
     `;
-    yield* recordAlertTransition({ monitorId: monitor.id, ok: 1, checkedAt });
+    yield* recordAlertTransition({ monitorId: monitor.id, ok, checkedAt });
   });
 
   const checkAll = Effect.fn("Status.checkAll")(function* () {
@@ -243,6 +232,15 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     });
     const now = yield* Clock.currentTimeMillis;
     yield* sql`DELETE FROM checks WHERE checked_at < ${now - 91 * DAY}`;
+    yield* Effect.forEach(
+      [MINUTE, HOUR, DAY],
+      (interval) => sql`
+      DELETE FROM check_buckets
+      WHERE interval_ms = ${interval}
+        AND bucket < ${Math.floor(now / interval) - (interval === DAY ? 91 : 90)}
+    `,
+      { discard: true },
+    );
     yield* sql`
       DELETE FROM alert_outbox
       WHERE sent_at IS NOT NULL AND sent_at < ${now - 91 * DAY}
