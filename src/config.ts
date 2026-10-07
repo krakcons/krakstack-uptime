@@ -24,7 +24,7 @@ export const configs = {
 
 export const configForPath = (path: StatusConfigPath) => configs[path];
 
-export const ConfigPath = Config.string("STATUS_CONFIG_PATH").pipe(
+export const ConfigPath = Config.String("STATUS_CONFIG_PATH").pipe(
   Config.withDefault(DEFAULT_CONFIG_PATH),
   Effect.flatMap((value) =>
     Schema.decodeUnknownEffect(StatusConfigPathSchema)(value).pipe(
