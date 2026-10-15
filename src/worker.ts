@@ -82,38 +82,39 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
     const email = alertConfig ? yield* Cloudflare.Email.Send(Email) : undefined;
     const router = yield* HttpRouter.make;
 
-    const checkAllAndAlert = status.checkAll().pipe(
-      Effect.flatMap((alerts) =>
-        email && alertConfig
-          ? Effect.forEach(
-              alerts,
-              (alert) => {
-                const message = makeAlertEmail({
-                  alert,
-                  siteName: `${config.siteName.label} ${config.siteName.en}`,
-                  statusUrl: statusPageUrl(config),
-                  timeZone: config.timeZone,
-                });
-                return email
-                  .send({
-                    from: {
-                      email: alertConfig.from,
-                      name: `${config.siteName.label} ${config.siteName.en}`,
-                    },
-                    to: [...alertConfig.emails],
-                    ...message,
-                  })
-                  .pipe(
-                    Effect.tap(() => status.markAlertSent({ id: alert.id })),
-                    Effect.tapError(Effect.logError),
-                    Effect.ignore,
-                  );
-              },
-              { concurrency: 1, discard: true },
-            )
-          : Effect.void,
-      ),
-    );
+    const checkAllAndAlert = (scheduledTime: number) =>
+      status.checkAll(scheduledTime).pipe(
+        Effect.flatMap((alerts) =>
+          email && alertConfig
+            ? Effect.forEach(
+                alerts,
+                (alert) => {
+                  const message = makeAlertEmail({
+                    alert,
+                    siteName: `${config.siteName.label} ${config.siteName.en}`,
+                    statusUrl: statusPageUrl(config),
+                    timeZone: config.timeZone,
+                  });
+                  return email
+                    .send({
+                      from: {
+                        email: alertConfig.from,
+                        name: `${config.siteName.label} ${config.siteName.en}`,
+                      },
+                      to: [...alertConfig.emails],
+                      ...message,
+                    })
+                    .pipe(
+                      Effect.tap(() => status.markAlertSent({ id: alert.id })),
+                      Effect.tapError(Effect.logError),
+                      Effect.ignore,
+                    );
+                },
+                { concurrency: 1, discard: true },
+              )
+            : Effect.void,
+        ),
+      );
 
     const loadFreshSnapshot = status
       .loadSnapshot()
@@ -178,8 +179,11 @@ export default class StatusWorker extends Cloudflare.Worker<StatusWorker>()(
     );
     yield* router.add("*", "/*", text("Not found", 404));
 
-    yield* Cloudflare.Workers.cron("* * * * *", () =>
-      checkAllAndAlert.pipe(Effect.tapCause(Effect.logError), Effect.ignore),
+    yield* Cloudflare.Workers.cron("* * * * *", (controller) =>
+      checkAllAndAlert(controller.scheduledTime).pipe(
+        Effect.tapCause(Effect.logError),
+        Effect.ignore,
+      ),
     );
 
     return {

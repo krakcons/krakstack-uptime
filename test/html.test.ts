@@ -90,7 +90,7 @@ it("renders monitor domains as safe external links", () => {
 
 it("renders uptime totals independently for each time range", () => {
   const now = Date.UTC(2026, 7, 25);
-  const minute = Math.floor(now / 60_000);
+  const minute = Math.floor(now / 60_000) - 1;
   const hour = Math.floor(now / 3_600_000);
   const day = Math.floor(now / 86_400_000);
   const markup = renderStatus(
@@ -109,9 +109,70 @@ it("renders uptime totals independently for each time range", () => {
   expect(markup).toContain('class="uptime-bar bad"');
 });
 
+it("shows 90 completed minutes without including the pending current minute", () => {
+  const now = Date.UTC(2026, 7, 25, 20, 0, 30);
+  const current = Math.floor(now / 60_000);
+  const minutes = Array.from({ length: 90 }, (_, index) => ({
+    monitor_id: "api",
+    bucket: current - 90 + index,
+    successful: 1,
+    total: 1,
+  }));
+  const markup = renderStatus(
+    snapshot({
+      monitors: [monitor()],
+      minutes: [
+        ...minutes,
+        { monitor_id: "api", bucket: current - 91, successful: 0, total: 100 },
+        { monitor_id: "api", bucket: current, successful: 0, total: 100 },
+      ],
+    }),
+    now,
+  );
+  const minuteViews = [
+    ...markup.matchAll(/data-range-view="minutes">([\s\S]*?)<\/div>/g),
+  ].map((match) => match[1]);
+
+  expect(minuteViews).toHaveLength(4);
+  for (const view of minuteViews) {
+    expect(view).not.toContain("No data");
+    expect(view).not.toContain("Aucune donnée");
+    expect(view).not.toContain("uptime-bar empty");
+    expect(view).not.toContain("uptime-bar bad");
+    expect(view).not.toContain("Aug 25, 2026, 08:00 PM UTC:");
+  }
+  expect(markup.match(/class="uptime-bar good"/g)).toHaveLength(180);
+  expect(markup).toContain("100.00% uptime");
+});
+
+it("preserves genuine missing minute buckets", () => {
+  const now = Date.UTC(2026, 7, 25, 20, 0);
+  const markup = renderStatus(
+    snapshot({
+      monitors: [monitor()],
+      minutes: [
+        {
+          monitor_id: "api",
+          bucket: Math.floor(now / 60_000) - 2,
+          successful: 1,
+          total: 1,
+        },
+      ],
+    }),
+    now,
+  );
+
+  expect(markup).toContain(
+    'data-tooltip="Aug 25, 2026, 07:59 PM UTC: No data"',
+  );
+  expect(markup).toContain(
+    'data-tooltip="Aug 25, 2026, 07:58 PM UTC: 100.00% uptime"',
+  );
+});
+
 it("renders immediate custom uptime tooltips", () => {
   const now = Date.UTC(2026, 7, 25, 20, 0);
-  const minute = Math.floor(now / 60_000);
+  const minute = Math.floor(now / 60_000) - 1;
   const statusMarkup = renderStatus(
     snapshot({
       monitors: [monitor()],
@@ -123,7 +184,7 @@ it("renders immediate custom uptime tooltips", () => {
   const page = renderPage(siteName, statusMarkup);
 
   expect(statusMarkup).toContain(
-    'data-tooltip="Aug 25, 2026, 04:00 PM EDT: 100.00% uptime"',
+    'data-tooltip="Aug 25, 2026, 03:59 PM EDT: 100.00% uptime"',
   );
   expect(statusMarkup).not.toContain(" title=");
   expect(page).toContain("data-uptime-tooltip hidden");

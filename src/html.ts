@@ -237,7 +237,7 @@ const renderMonitor = (
       <div class="component-name"><strong>${escapeHtml(monitor.name)}</strong><a href="${escapeHtml(monitor.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(monitor.url)}</a></div>
       <span class="component-status ${tone}"><i></i>${label}</span>
     </div>
-    ${renderRange(monitor, snapshot.minutes, "minutes", MINUTE, now, timeZone, locale)}
+    ${renderRange(monitor, snapshot.minutes, "minutes", MINUTE, now - MINUTE, timeZone, locale)}
     ${renderRange(monitor, snapshot.hours, "hours", HOUR, now, timeZone, locale)}
     ${renderRange(monitor, snapshot.days, "days", DAY, now, timeZone, locale)}
   </article>`;
@@ -322,6 +322,16 @@ export const renderStatus = (
   timeZone = "UTC",
 ): string => {
   const state = overallState(snapshot);
+  // Minute checks may still be running in the current bucket. Show the last
+  // 90 completed minutes, and use the same window for bars and aggregates.
+  const minuteNow = now - MINUTE;
+  const lastMinute = Math.floor(minuteNow / MINUTE);
+  const visibleSnapshot: Snapshot = {
+    ...snapshot,
+    minutes: snapshot.minutes.filter(
+      (row) => row.bucket > lastMinute - 90 && row.bucket <= lastMinute,
+    ),
+  };
   const groups = new Map<string, Array<MonitorRow>>();
   for (const monitor of snapshot.monitors) {
     const group = groups.get(monitor.group) ?? [];
@@ -329,8 +339,8 @@ export const renderStatus = (
     groups.set(monitor.group, group);
   }
   return `<main id="status-content" data-range="days">
-    ${renderLocalizedStatus(snapshot, state, groups, now, timeZone, "en")}
-    ${renderLocalizedStatus(snapshot, state, groups, now, timeZone, "fr")}
+    ${renderLocalizedStatus(visibleSnapshot, state, groups, now, timeZone, "en")}
+    ${renderLocalizedStatus(visibleSnapshot, state, groups, now, timeZone, "fr")}
   </main>`;
 };
 

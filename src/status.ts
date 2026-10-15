@@ -156,7 +156,9 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     const minutes = yield* sql`
       SELECT monitor_id, bucket, successful, total
       FROM check_buckets
-      WHERE interval_ms = ${MINUTE} AND bucket >= ${Math.floor(now / MINUTE) - 89}
+      WHERE interval_ms = ${MINUTE}
+        AND bucket >= ${Math.floor(now / MINUTE) - 90}
+        AND bucket < ${Math.floor(now / MINUTE)}
     `.pipe(Effect.flatMap(decodeBucketRows));
     const hours = yield* sql`
       SELECT monitor_id, bucket, successful, total
@@ -173,8 +175,10 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
 
   const runCheck = Effect.fn("Status.runCheck")(function* ({
     monitor,
+    checkedAt,
   }: {
     readonly monitor: MonitorConfig;
+    readonly checkedAt: number;
   }) {
     const started = yield* Clock.monotonicTimeNanos;
     const request = HttpClientRequest.make(monitor.method)(monitor.url, {
@@ -202,7 +206,6 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
       ),
     ).pipe(Effect.result);
     const finished = yield* Clock.monotonicTimeNanos;
-    const checkedAt = yield* Clock.currentTimeMillis;
     const latency = Math.round(
       Duration.toMillis(Duration.nanos(finished - started)),
     );
@@ -225,11 +228,20 @@ export const makeStatus = Effect.fn("Status.make")(function* ({
     yield* recordAlertTransition({ monitorId: monitor.id, ok, checkedAt });
   });
 
-  const checkAll = Effect.fn("Status.checkAll")(function* () {
-    yield* Effect.forEach(config.monitors, (monitor) => runCheck({ monitor }), {
-      concurrency: 5,
-      discard: true,
-    });
+  const checkAll = Effect.fn("Status.checkAll")(function* (
+    scheduledTime?: number,
+  ) {
+    // Use one logical check time for the batch, not completion times that can
+    // spill into the following minute due to cron jitter, retries or queuing.
+    const checkedAt = scheduledTime ?? (yield* Clock.currentTimeMillis);
+    yield* Effect.forEach(
+      config.monitors,
+      (monitor) => runCheck({ monitor, checkedAt }),
+      {
+        concurrency: 5,
+        discard: true,
+      },
+    );
     const now = yield* Clock.currentTimeMillis;
     yield* sql`DELETE FROM checks WHERE checked_at < ${now - 91 * DAY}`;
     yield* Effect.forEach(
