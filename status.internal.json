@@ -111,6 +111,15 @@
       "timeoutMs": 10000
     },
     {
+      "id": "magenta-photo",
+      "group": "WordPress",
+      "name": "Magenta Photo",
+      "url": "https://magentaphoto.com",
+      "method": "GET",
+      "expectedStatus": 200,
+      "timeoutMs": 10000
+    },
+    {
       "id": "musee-imaginarium",
       "group": "WordPress",
       "name": "Musee Imaginarium",
