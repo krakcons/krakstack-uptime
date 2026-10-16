@@ -109,6 +109,35 @@ it("renders uptime totals independently for each time range", () => {
   expect(markup).toContain('class="uptime-bar bad"');
 });
 
+it.each([
+  [100_000, "99.999%"],
+  [1_000_000, "99.9999%"],
+  [10_000_000, "99.99999%"],
+  [250_000, "99.9996%"],
+])("preserves near-perfect uptime for %i checks", (total, expected) => {
+  const now = Date.UTC(2026, 7, 25);
+  const markup = renderStatus(
+    snapshot({
+      monitors: [monitor()],
+      days: [
+        {
+          monitor_id: "api",
+          bucket: Math.floor(now / 86_400_000),
+          successful: total - 1,
+          total,
+        },
+      ],
+    }),
+    now,
+  );
+
+  expect(markup).not.toContain("100.00%");
+  expect(markup).toContain(`<strong>${expected} uptime</strong>`);
+  expect(markup).toContain(`<span>${expected} uptime</span>`);
+  expect(markup).toContain(`UTC: ${expected} uptime · Failed check:`);
+  expect(markup).toContain(`${expected} de disponibilité`);
+});
+
 it("shows 90 completed minutes without including the pending current minute", () => {
   const now = Date.UTC(2026, 7, 25, 20, 0, 30);
   const current = Math.floor(now / 60_000);

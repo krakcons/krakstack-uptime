@@ -130,6 +130,14 @@ const overallLabel = (state: OverallState, locale: Locale): string => {
   }
 };
 
+const formatUptime = (percent: number): string => {
+  let precision = 2;
+  while (percent < 100 && Number(percent.toFixed(precision)) === 100) {
+    precision++;
+  }
+  return `${percent.toFixed(precision)}%`;
+};
+
 const renderBars = (
   monitor: MonitorRow,
   rows: ReadonlyArray<BucketRow>,
@@ -162,7 +170,7 @@ const renderBars = (
     const label =
       percent === null
         ? messages.noData
-        : `${percent.toFixed(2)}% ${messages.uptime}`;
+        : `${formatUptime(percent)} ${messages.uptime}`;
     const failed = row ? row.total - row.successful : 0;
     const failures =
       failed > 0
@@ -190,7 +198,7 @@ const aggregateUptime = (
   const successful = monitorRows.reduce((sum, row) => sum + row.successful, 0);
   return total === 0
     ? messages.noData
-    : `${((successful / total) * 100).toFixed(2)}% ${messages.uptime}`;
+    : `${formatUptime((successful / total) * 100)} ${messages.uptime}`;
 };
 
 const monitorUptime = (
