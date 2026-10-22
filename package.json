@@ -11,8 +11,6 @@
     "deploy:internal": "STATUS_CONFIG_PATH=status.internal.json alchemy deploy --stage prod",
     "destroy": "alchemy destroy --stage prod",
     "lint": "oxlint",
-    "fmt": "oxfmt",
-    "fmt:check": "oxfmt --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -28,7 +26,6 @@
     "@effect/vitest": "4.0.0",
     "@krak-stack/registry": "0.1.55",
     "@types/node": "^24",
-    "oxfmt": "^0.64.0",
     "oxlint": "^1.79.0",
     "typescript": "^5.9.2",
     "vitest": "^5.0.3"

@@ -131,7 +131,7 @@ Edit `status.config.json` and deploy again whenever monitors change. Reusing a m
 ## Checks
 
 ```sh
-bun run fmt:check
+bun fmt --check
 bun run lint
 bun run typecheck
 bun run test
@@ -140,7 +140,7 @@ bun run test
 Format files with:
 
 ```sh
-bun run fmt
+bun fmt
 ```
 
 ## Custom Domain

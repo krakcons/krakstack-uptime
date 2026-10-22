@@ -45,7 +45,7 @@
 - Use Vitest with `@effect/vitest`.
 - Add focused `*.test.ts` coverage in `test/` for behavior changes.
 - Run the repository checks after code changes:
-  - `bun run fmt:check`
+  - `bun fmt --check`
   - `bun run lint`
   - `bun run typecheck`
   - `bun run test`

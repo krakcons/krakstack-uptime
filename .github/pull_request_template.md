@@ -4,7 +4,7 @@ Describe the problem and the solution.
 
 ## Verification
 
-- [ ] `bun run fmt:check`
+- [ ] `bun fmt --check`
 - [ ] `bun run lint`
 - [ ] `bun run typecheck`
 - [ ] `bun run test`

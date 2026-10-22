@@ -1,0 +1,4 @@
+[fmt]
+printWidth = 80
+sortPackageJson = true
+svelte = false

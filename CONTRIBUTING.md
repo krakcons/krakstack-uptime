@@ -39,13 +39,13 @@ See [README.md](README.md) for configuration and deployment details.
 Run all checks before submitting a pull request:
 
 ```sh
-bun run fmt:check
+bun fmt --check
 bun run lint
 bun run typecheck
 bun run test
 ```
 
-Use `bun run fmt` to format changed files.
+Use `bun fmt <files>` to format changed files.
 
 ## Pull Requests
 
