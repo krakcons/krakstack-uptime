@@ -84,15 +84,6 @@
       "timeoutMs": 10000
     },
     {
-      "id": "umami",
-      "group": "Apps",
-      "name": "Umami",
-      "url": "https://analytics.krakconsultants.net",
-      "method": "GET",
-      "expectedStatus": 200,
-      "timeoutMs": 10000
-    },
-    {
       "id": "volunteering-connector",
       "group": "Apps",
       "name": "Volunteering Connector",
