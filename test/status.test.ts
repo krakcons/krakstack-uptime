@@ -73,6 +73,7 @@ for (const scheduledTime of [undefined, 60_000]) {
             return [];
           });
         const sql = yield* SqlClient.make({
+          driver: "sqlite",
           acquirer: Effect.succeed({
             execute,
             executeRaw: execute,
