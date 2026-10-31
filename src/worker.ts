@@ -1,6 +1,6 @@
 import { ServerSentEventGenerator } from "@starfederation/datastar-sdk/web";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as SQL from "alchemy/SQL/D1";
+import * as Cloudflare from "@alchemy.run/cloudflare";
+import * as SQL from "@alchemy.run/cloudflare/D1/SQL";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
