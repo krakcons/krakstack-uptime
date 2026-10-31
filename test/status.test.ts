@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -30,19 +31,52 @@ describe("nextConfirmedStatus", () => {
   });
 });
 
-it.effect("retries a failed monitor check twice", () =>
+it.effect("spaces the two retries so a transient failure can recover", () =>
   Effect.gen(function* () {
     const attempts = yield* Ref.make(0);
-    const result = yield* retryMonitorCheck(
+    const fiber = yield* retryMonitorCheck(
       Ref.updateAndGet(attempts, (count) => count + 1).pipe(
         Effect.flatMap((count) =>
           count < 3 ? Effect.fail("timeout") : Effect.succeed("ok"),
         ),
       ),
-    );
+    ).pipe(Effect.forkChild);
+
+    yield* TestClock.adjust(0);
+    expect(yield* Ref.get(attempts)).toBe(1);
+    yield* TestClock.adjust(4_999);
+    expect(yield* Ref.get(attempts)).toBe(1);
+    yield* TestClock.adjust(1);
+    expect(yield* Ref.get(attempts)).toBe(2);
+    yield* TestClock.adjust(5_000);
+    const result = yield* Fiber.join(fiber);
 
     expect(result).toBe("ok");
     expect(yield* Ref.get(attempts)).toBe(3);
+  }),
+);
+
+it.effect("stops after three failed attempts", () =>
+  Effect.gen(function* () {
+    const attempts = yield* Ref.make(0);
+    const fiber = yield* retryMonitorCheck(
+      Ref.update(attempts, (count) => count + 1).pipe(
+        Effect.andThen(Effect.fail("unavailable")),
+      ),
+    ).pipe(Effect.result, Effect.forkChild);
+
+    yield* TestClock.adjust(10_000);
+    expect(yield* Fiber.join(fiber)).toMatchObject({
+      _tag: "Failure",
+      failure: "unavailable",
+    });
+    expect(yield* Ref.get(attempts)).toBe(3);
+  }),
+);
+
+it.effect("does not delay a successful first attempt", () =>
+  Effect.gen(function* () {
+    expect(yield* retryMonitorCheck(Effect.succeed("ok"))).toBe("ok");
   }),
 );
 
@@ -100,7 +134,11 @@ for (const scheduledTime of [undefined, 60_000]) {
           Effect.provideService(HttpClient.HttpClient, httpClient),
         );
 
-        yield* status.checkAll(scheduledTime);
+        const checks = yield* status
+          .checkAll(scheduledTime)
+          .pipe(Effect.forkChild);
+        yield* TestClock.adjust(600_000);
+        yield* Fiber.join(checks);
 
         const inserts = queries.filter((query) =>
           query.sql.includes("INSERT OR REPLACE INTO monitor_latest_check"),

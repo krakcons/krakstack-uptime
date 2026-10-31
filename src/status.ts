@@ -1,6 +1,7 @@
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
@@ -55,7 +56,10 @@ export const nextConfirmedStatus = (
 
 export const retryMonitorCheck = <A, E, R>(
   attempt: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> => attempt.pipe(Effect.retry({ times: 2 }));
+): Effect.Effect<A, E, R> =>
+  attempt.pipe(
+    Effect.retry({ times: 2, schedule: Schedule.spaced("5 seconds") }),
+  );
 
 export const makeStatus = Effect.fn("Status.make")(function* ({
   config,
