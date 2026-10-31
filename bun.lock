@@ -23,6 +23,9 @@
       },
     },
   },
+  "patchedDependencies": {
+    "alchemy@2.0.0-beta.84": "patches/alchemy@2.0.0-beta.84.patch",
+  },
   "packages": {
     "@alchemy.run/acme": ["@alchemy.run/acme@2.0.0-beta.84", "", { "dependencies": { "@distilled.cloud/acme": "1.0.0-rc.17" }, "peerDependencies": { "alchemy": "2.0.0-beta.84", "effect": "^4.0.5" } }, "sha512-ma7HaEN5K7hsNlSkK7CEGn+08hKi4xP1puEAoSO7UACXc/j/2gZKljuztADyCOKOdp8nIMJ/zH12Qs7J11E8cQ=="],
 

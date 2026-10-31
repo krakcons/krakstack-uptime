@@ -1,0 +1,152 @@
+diff --git a/lib/Auth/OAuthFlow.d.ts b/lib/Auth/OAuthFlow.d.ts
+index 37fd00f962920ec62a390b4be9467e6760791625..6f294db5a65187872465fae3c1c7a4d4b7a02a1e 100644
+--- a/lib/Auth/OAuthFlow.d.ts
++++ b/lib/Auth/OAuthFlow.d.ts
+@@ -1,4 +1,4 @@
+-import * as Crypto from "effect/Crypto";
++import { Digest, SecureRandom } from "effect/crypto";
+ import * as Effect from "effect/Effect";
+ import * as Redacted from "effect/Redacted";
+ import * as Schema from "effect/Schema";
+@@ -226,7 +226,7 @@ export interface OAuthClient {
+      * take them per-authorization; omit for providers whose scopes are
+      * configured on the application.
+      */
+-    readonly authorize: (scopes?: ReadonlyArray<string>) => Effect.Effect<Authorization, OAuthCryptoError | UnsupportedOAuthFlowError, Crypto.Crypto>;
++    readonly authorize: (scopes?: ReadonlyArray<string>) => Effect.Effect<Authorization, OAuthCryptoError | UnsupportedOAuthFlowError, Digest.Digest | SecureRandom.SecureRandom>;
+     /**
+      * Exchange an authorization code directly. `authorization` supplies the
+      * PKCE verifier; omit for non-PKCE clients (tests, relay-less flows).
+diff --git a/lib/Auth/OAuthFlow.js b/lib/Auth/OAuthFlow.js
+index c59878051a06d209772ce23ebfbf2572c5cdd202..82fb36767c33a60d21f8625baea826b8d477bd39 100644
+--- a/lib/Auth/OAuthFlow.js
++++ b/lib/Auth/OAuthFlow.js
+@@ -1,6 +1,6 @@
+ import http from "node:http";
+ import * as Clock from "effect/Clock";
+-import * as Crypto from "effect/Crypto";
++import { Digest, SecureRandom } from "effect/crypto";
+ import * as Data from "effect/Data";
+ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+@@ -121,17 +121,15 @@ export const OAuthCredentials = Schema.Struct({
+     scopes: Schema.String.pipe(Schema.Array, Schema.mutable),
+ });
+ const randomText = Effect.fn(function* (length) {
+-    const crypto = yield* Crypto.Crypto;
+-    const bytes = yield* crypto
+-        .randomBytes(length)
+-        .pipe(Effect.mapError((cause) => new OAuthCryptoError({ operation: "Secure random generation", cause })));
++    const random = yield* SecureRandom.SecureRandom;
++    const bytes = yield* random.randomBytes(length);
+     return Base64Url.encode(bytes);
+ });
+ const generatePKCE = Effect.fn(function* (length = 96) {
+-    const crypto = yield* Crypto.Crypto;
++    const digest = yield* Digest.Digest;
+     const verifier = yield* randomText(length);
+-    const challenge = yield* crypto
+-        .digest("SHA-256", new TextEncoder().encode(verifier))
++    const challenge = yield* digest
++        .digest(Digest.sha256, new TextEncoder().encode(verifier))
+         .pipe(Effect.mapError((cause) => new OAuthCryptoError({ operation: "PKCE digest", cause })));
+     return { verifier, challenge: Base64Url.encode(challenge) };
+ });
+diff --git a/lib/Stack.d.ts b/lib/Stack.d.ts
+index 1182271a665821b8d17bc3aa424f41a68ac9d748..902207755ffa82abafdb06a9f8c60c42df41ed43 100644
+--- a/lib/Stack.d.ts
++++ b/lib/Stack.d.ts
+@@ -1,6 +1,7 @@
+ import type { ConfigError } from "effect/Config";
+ import * as Context from "effect/Context";
+-import type { Crypto } from "effect/Crypto";
++import type { Digest, SecureRandom } from "effect/crypto";
++type Crypto = Digest.Digest | SecureRandom.SecureRandom;
+ import * as Effect from "effect/Effect";
+ import { FileSystem } from "effect/FileSystem";
+ import type { HttpClient } from "effect/http/HttpClient";
+diff --git a/lib/Util/PlatformServices.d.ts b/lib/Util/PlatformServices.d.ts
+index 533d43cc7a9b4926d2c23dc8f3d7713cf20c2124..63222f071ae7396de884b37a63cc0fcb8f9f4dc8 100644
+--- a/lib/Util/PlatformServices.d.ts
++++ b/lib/Util/PlatformServices.d.ts
+@@ -1,4 +1,5 @@
+-import type { Crypto } from "effect/Crypto";
++import type { Digest, SecureRandom } from "effect/crypto";
++type Crypto = Digest.Digest | SecureRandom.SecureRandom;
+ import type { Input as DurationInput } from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import type { FileSystem } from "effect/FileSystem";
+diff --git a/src/Auth/OAuthFlow.ts b/src/Auth/OAuthFlow.ts
+index 76e5bc195dde47a43a81200a788af0e824bc0b89..dea15d25d363b7b702d25ca4eb64cfb58b067e7d 100644
+--- a/src/Auth/OAuthFlow.ts
++++ b/src/Auth/OAuthFlow.ts
+@@ -1,6 +1,6 @@
+ import http from "node:http";
+ import * as Clock from "effect/Clock";
+-import * as Crypto from "effect/Crypto";
++import { Digest, SecureRandom } from "effect/crypto";
+ import * as Data from "effect/Data";
+ import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+@@ -245,7 +245,7 @@ export interface OAuthClient {
+    */
+   readonly authorize: (
+     scopes?: ReadonlyArray<string>,
+-  ) => Effect.Effect<Authorization, OAuthCryptoError | UnsupportedOAuthFlowError, Crypto.Crypto>;
++  ) => Effect.Effect<Authorization, OAuthCryptoError | UnsupportedOAuthFlowError, Digest.Digest | SecureRandom.SecureRandom>;
+   /**
+    * Exchange an authorization code directly. `authorization` supplies the
+    * PKCE verifier; omit for non-PKCE clients (tests, relay-less flows).
+@@ -312,22 +312,16 @@ export interface OAuthClient {
+ }
+ 
+ const randomText = Effect.fn(function* (length: number) {
+-  const crypto = yield* Crypto.Crypto;
+-  const bytes = yield* crypto
+-    .randomBytes(length)
+-    .pipe(
+-      Effect.mapError(
+-        (cause) => new OAuthCryptoError({ operation: "Secure random generation", cause }),
+-      ),
+-    );
++  const random = yield* SecureRandom.SecureRandom;
++  const bytes = yield* random.randomBytes(length);
+   return Base64Url.encode(bytes);
+ });
+ 
+ const generatePKCE = Effect.fn(function* (length = 96) {
+-  const crypto = yield* Crypto.Crypto;
++  const digest = yield* Digest.Digest;
+   const verifier = yield* randomText(length);
+-  const challenge = yield* crypto
+-    .digest("SHA-256", new TextEncoder().encode(verifier))
++  const challenge = yield* digest
++    .digest(Digest.sha256, new TextEncoder().encode(verifier))
+     .pipe(Effect.mapError((cause) => new OAuthCryptoError({ operation: "PKCE digest", cause })));
+   return { verifier, challenge: Base64Url.encode(challenge) };
+ });
+diff --git a/src/Stack.ts b/src/Stack.ts
+index 09aaf3cd5ea113d836188e46c08ddd5d39773d6e..0bf9f38403bb35d00a8579af80624a3fb3828eeb 100644
+--- a/src/Stack.ts
++++ b/src/Stack.ts
+@@ -1,7 +1,8 @@
+ import type { ConfigError } from "effect/Config";
+ import { ConfigProvider } from "effect/ConfigProvider";
+ import * as Context from "effect/Context";
+-import type { Crypto } from "effect/Crypto";
++import type { Digest, SecureRandom } from "effect/crypto";
++type Crypto = Digest.Digest | SecureRandom.SecureRandom;
+ import * as Effect from "effect/Effect";
+ import { FileSystem } from "effect/FileSystem";
+ import * as FetchHttpClient from "effect/http/FetchHttpClient";
+diff --git a/src/Util/PlatformServices.ts b/src/Util/PlatformServices.ts
+index a6daed032ed1414c2bf80d2d315462f3898c4b30..cb545fbcfe8257d3ae9b18572f622fe91e8e055f 100644
+--- a/src/Util/PlatformServices.ts
++++ b/src/Util/PlatformServices.ts
+@@ -1,4 +1,5 @@
+-import type { Crypto } from "effect/Crypto";
++import type { Digest, SecureRandom } from "effect/crypto";
++type Crypto = Digest.Digest | SecureRandom.SecureRandom;
+ import type { Input as DurationInput } from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import type { FileSystem } from "effect/FileSystem";
